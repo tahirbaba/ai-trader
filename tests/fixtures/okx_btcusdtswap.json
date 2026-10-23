@@ -1,0 +1,7 @@
+{
+  "instId": "BTC-USDT-SWAP",
+  "lotSz": "1",
+  "minSz": "1",
+  "ctVal": "0.01",
+  "tickSz": "0.1"
+}

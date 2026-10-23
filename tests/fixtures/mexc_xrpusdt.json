@@ -1,0 +1,8 @@
+{
+  "symbol": "XRP_USDT",
+  "minVol": 1,
+  "maxVol": 1000000,
+  "contractSize": 1,
+  "volUnit": 1,
+  "priceUnit": 0.0001
+}

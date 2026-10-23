@@ -1,0 +1,7 @@
+{
+  "instId": "XRP-USDT-SWAP",
+  "lotSz": "1",
+  "minSz": "1",
+  "ctVal": "10",
+  "tickSz": "0.0001"
+}

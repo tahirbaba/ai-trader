@@ -17,6 +17,14 @@ Run with:
     uv run scripts/feasibility.py
 
 No API keys required — public endpoints only.
+
+Fix log (v2):
+  - Bybit: min_notional = max(minOrderAmt, minNotionalValue, min_qty*price).
+  - MEXC: min_notional = minVol * contractSize * price (not minVol * price).
+  - MaxStop%: computed at planned_notional = MAX_MARGIN*MAX_LEVERAGE ($6),
+    not at exchange minimum. This is the realistic stop budget for our position.
+  - Binance: exponential backoff (2 retries) on timeout/connection errors.
+  - OKX: marked "Re-run from VPS" when geo-restricted; results skipped.
 """
 
 from __future__ import annotations
@@ -36,13 +44,21 @@ from rich.table import Table
 # ---------------------------------------------------------------------------
 MAX_MARGIN_USD: float = 2.0
 MAX_LOSS_USD: float = 1.0
-SLIPPAGE_PCT: float = 0.05  # percent (0.05%)
+SLIPPAGE_PCT: float = 0.05  # percent (i.e. 0.05% = 0.0005 as a fraction)
 MAX_LEVERAGE: int = 3
 LIQ_BUFFER_MULTIPLE: float = 2.0
-MAINT_MARGIN_PCT: float = 0.5  # typical for low leverage on most exchanges
+MAINT_MARGIN_PCT: float = 0.5  # typical maintenance margin % at low leverage
 
-# max notional = margin × leverage
+# Derived: max notional we will ever put on = margin × leverage
 MAX_NOTIONAL_USD: float = MAX_MARGIN_USD * MAX_LEVERAGE  # $6.00
+
+# planned_notional: the notional we SIZE to when feasibility is positive.
+# = min(max_margin * max_leverage, sized_notional) per BUILD_PLAN instructions.
+# Since sized_notional = MAX_MARGIN * MAX_LEVERAGE (we use the full budget),
+# planned_notional is always MAX_NOTIONAL_USD.  MaxStop% and LiqDist% are
+# computed here so the stop-budget check is realistic, not artificially generous
+# from a tiny exchange-minimum notional.
+PLANNED_NOTIONAL_USD: float = MAX_NOTIONAL_USD  # $6.00
 
 # Taker fees per exchange (percent)
 TAKER_FEES: dict[str, float] = {
@@ -53,7 +69,8 @@ TAKER_FEES: dict[str, float] = {
 }
 
 SYMBOLS = ["BTC", "ETH", "SOL", "XRP", "DOGE"]
-TIMEOUT = 10  # seconds per request
+TIMEOUT = 10  # seconds per HTTP request
+RETRY_ATTEMPTS = 2  # extra attempts after the first for Binance
 
 console = Console()
 
@@ -65,33 +82,111 @@ console = Console()
 class ContractInfo:
     exchange: str
     symbol: str
-    inst_type: str  # "USDT-PERP" or "SPOT"
+    inst_type: str  # "USDT-PERP"
     price: float
     min_qty: float
-    min_notional: float
+    min_notional: float  # raw exchange floor (USD)
     lot_size: float
     tick_size: float
     atr_15m: float
     taker_fee_pct: float
+    contract_size: float = 1.0  # base-asset units per contract (1.0 for spot-like)
     error: str = ""
-    # computed fields
-    min_notional_usd: float = 0.0
-    max_notional_ok: bool = False
-    required_leverage: float = 0.0
-    round_trip_fee_usd: float = 0.0
-    net_loss_budget: float = 0.0
-    max_stop_pct: float = 0.0
-    typical_stop_pct: float = 0.0
-    liq_distance_pct: float = 0.0
+    note: str = ""  # non-fatal notes (e.g. geo-restriction warnings)
+    # ---- computed by compute_tradability() --------------------------------
+    min_notional_usd: float = 0.0  # max(min_notional, min_qty*contract_size*price)
+    max_notional_ok: bool = False  # min_notional_usd <= MAX_NOTIONAL_USD
+    required_leverage: float = 0.0  # min_notional_usd / MAX_MARGIN (informational)
+    planned_notional: float = 0.0  # PLANNED_NOTIONAL_USD (always $6 at 3x cap)
+    round_trip_fee_usd: float = 0.0  # at planned_notional
+    net_loss_budget: float = 0.0  # MAX_LOSS - round_trip_fee
+    max_stop_pct: float = 0.0  # at planned_notional
+    typical_stop_pct: float = 0.0  # ATR-based
+    liq_distance_pct: float = 0.0  # at planned leverage (3x)
     tradable: bool = False
+
+
+# ---------------------------------------------------------------------------
+# Per-exchange parser functions (pure; no HTTP — used in tests)
+# ---------------------------------------------------------------------------
+def parse_binance_filters(sym_data: dict[str, Any]) -> dict[str, float]:
+    """Return {min_qty, min_notional, lot_size, tick_size} from a Binance symbol dict."""
+    result: dict[str, float] = {
+        "min_qty": 0.0,
+        "min_notional": 0.0,
+        "lot_size": 0.0,
+        "tick_size": 0.0,
+    }
+    for filt in sym_data.get("filters", []):
+        ft = filt.get("filterType", "")
+        if ft == "LOT_SIZE":
+            result["min_qty"] = float(filt.get("minQty", 0))
+            result["lot_size"] = float(filt.get("stepSize", 0))
+        elif ft == "PRICE_FILTER":
+            result["tick_size"] = float(filt.get("tickSize", 0))
+        elif ft == "MIN_NOTIONAL":
+            result["min_notional"] = float(filt.get("notional", 0))
+    return result
+
+
+def parse_bybit_lot_filter(item: dict[str, Any]) -> dict[str, float]:
+    """Return {min_qty, min_notional, lot_size, tick_size} from a Bybit instrument dict.
+
+    min_notional = max(minOrderAmt, minNotionalValue) so that whichever field
+    Bybit populates is captured correctly.
+    """
+    lot = item.get("lotSizeFilter", {})
+    price = item.get("priceFilter", {})
+    return {
+        "min_qty": float(lot.get("minOrderQty", 0)),
+        "lot_size": float(lot.get("qtyStep", 0)),
+        "tick_size": float(price.get("tickSize", 0)),
+        # Fix: include both fields; take the larger (one may be zero)
+        "min_notional": max(
+            float(lot.get("minOrderAmt", 0)),
+            float(lot.get("minNotionalValue", 0)),
+        ),
+    }
+
+
+def parse_okx_instrument(item: dict[str, Any]) -> dict[str, float]:
+    """Return {min_qty, min_notional, lot_size, tick_size, contract_size} from an OKX instrument dict.
+
+    contract_size = ctVal (base-asset units per contract, e.g. 0.01 BTC).
+    min_notional is left 0 here; compute_tradability derives it via
+    min_qty * contract_size * price.
+    """
+    return {
+        "min_qty": float(item.get("minSz", 0)),
+        "lot_size": float(item.get("lotSz", 0)),
+        "tick_size": float(item.get("tickSz", 0)),
+        "min_notional": 0.0,  # derived from ctVal * price
+        "contract_size": float(item.get("ctVal", 0)),
+    }
+
+
+def parse_mexc_detail(detail: dict[str, Any]) -> dict[str, float]:
+    """Return {min_qty, min_notional, lot_size, tick_size, contract_size} from a MEXC detail dict.
+
+    Fix: min_notional is left 0 here so that compute_tradability uses
+    min_qty * contractSize * price — not the raw min_qty * price which would
+    treat each contract as worth its full underlying price.
+    """
+    return {
+        "min_qty": float(detail.get("minVol", 1)),
+        "lot_size": float(detail.get("volUnit", 1)),
+        "tick_size": float(detail.get("priceUnit", 0)),
+        "min_notional": 0.0,  # derived from minVol * contractSize * price
+        "contract_size": float(detail.get("contractSize", 1)),
+    }
 
 
 # ---------------------------------------------------------------------------
 # ATR computation
 # ---------------------------------------------------------------------------
 def compute_atr(candles: list[dict[str, Any]]) -> float:
-    """Compute ATR(14) from a list of candle dicts with open/high/low/close."""
-    trs = []
+    """Compute ATR(14) from a list of candle dicts with open/high/low/close keys."""
+    trs: list[float] = []
     for i, c in enumerate(candles[1:], 1):
         prev_close = float(candles[i - 1]["close"])
         high = float(c["high"])
@@ -102,44 +197,56 @@ def compute_atr(candles: list[dict[str, Any]]) -> float:
 
 
 # ---------------------------------------------------------------------------
-# Computation
+# Core feasibility computation (pure, no HTTP)
 # ---------------------------------------------------------------------------
 def compute_tradability(info: ContractInfo) -> ContractInfo:
-    """Fill in all computed fields and set tradable flag."""
+    """Populate all derived fields on a ContractInfo and set the tradable flag.
+
+    Key formula changes vs v1:
+    - min_notional_usd uses contract_size so MEXC/OKX are correct.
+    - planned_notional = PLANNED_NOTIONAL_USD ($6) — the notional we actually
+      intend to trade, capped at MAX_MARGIN*MAX_LEVERAGE.  MaxStop% and
+      LiqDist% are computed here to give a realistic, conservative check.
+    """
     if info.error:
         return info
 
-    # min_notional_usd = max(exchange min_notional, min_qty × price)
-    info.min_notional_usd = max(info.min_notional, info.min_qty * info.price)
+    # ---- Step 1: exchange-floor notional ----------------------------------
+    # For MEXC/OKX: min_qty is in contracts; multiply by contract_size to get
+    # base-asset units, then by price to get USD.
+    info.min_notional_usd = max(
+        info.min_notional,
+        info.min_qty * info.contract_size * info.price,
+    )
 
-    # max notional allowed = MAX_MARGIN × MAX_LEVERAGE = $6.00
+    # ---- Step 2: notional check -------------------------------------------
     info.max_notional_ok = info.min_notional_usd <= MAX_NOTIONAL_USD
+    info.required_leverage = info.min_notional_usd / MAX_MARGIN_USD if MAX_MARGIN_USD > 0 else 999.0
 
-    # required leverage = min_notional / MAX_MARGIN
-    info.required_leverage = info.min_notional_usd / MAX_MARGIN_USD if MAX_MARGIN_USD > 0 else 999
+    # ---- Step 3: stop budget at PLANNED notional --------------------------
+    # We always plan to use MAX_MARGIN × MAX_LEVERAGE ($6) regardless of the
+    # exchange floor.  This prevents artificially huge MaxStop% numbers when
+    # the exchange minimum is very small (e.g. 1 DOGE = $0.08).
+    info.planned_notional = PLANNED_NOTIONAL_USD  # $6.00
 
-    # round-trip fee = notional × (taker + taker) / 100
-    info.round_trip_fee_usd = info.min_notional_usd * (info.taker_fee_pct + info.taker_fee_pct) / 100
-
-    # net loss budget = MAX_LOSS - fees
+    info.round_trip_fee_usd = info.planned_notional * 2.0 * info.taker_fee_pct / 100.0
     info.net_loss_budget = MAX_LOSS_USD - info.round_trip_fee_usd
 
-    # max stop pct = (net_loss_budget / min_notional - slippage_pct/100) × 100
-    if info.min_notional_usd > 0 and info.net_loss_budget > 0:
+    if info.net_loss_budget > 0 and info.planned_notional > 0:
         info.max_stop_pct = (
-            info.net_loss_budget / info.min_notional_usd - SLIPPAGE_PCT / 100
-        ) * 100
+            info.net_loss_budget / info.planned_notional - SLIPPAGE_PCT / 100.0
+        ) * 100.0
     else:
         info.max_stop_pct = 0.0
 
-    # typical stop pct = ATR(15m) / price × 100
-    info.typical_stop_pct = (info.atr_15m / info.price * 100) if info.price > 0 else 0.0
+    # ---- Step 4: typical stop from ATR ------------------------------------
+    info.typical_stop_pct = (info.atr_15m / info.price * 100.0) if info.price > 0 else 0.0
 
-    # liq distance pct = (1/required_leverage - MAINT_MARGIN_PCT/100) × 100
-    req_lev = max(info.required_leverage, 1.0)
-    info.liq_distance_pct = (1.0 / req_lev - MAINT_MARGIN_PCT / 100) * 100
+    # ---- Step 5: liquidation distance at planned leverage (3x) ------------
+    planned_lev = max(info.planned_notional / MAX_MARGIN_USD, 1.0)  # 3.0x
+    info.liq_distance_pct = (1.0 / planned_lev - MAINT_MARGIN_PCT / 100.0) * 100.0
 
-    # tradable = all three conditions met
+    # ---- Step 6: three tradability conditions -----------------------------
     cond1 = info.max_notional_ok
     cond2 = info.typical_stop_pct > 0 and info.typical_stop_pct <= info.max_stop_pct
     cond3 = info.liq_distance_pct >= LIQ_BUFFER_MULTIPLE * info.typical_stop_pct
@@ -149,7 +256,33 @@ def compute_tradability(info: ContractInfo) -> ContractInfo:
 
 
 # ---------------------------------------------------------------------------
-# Binance USDT Perp
+# HTTP helper: GET with exponential backoff
+# ---------------------------------------------------------------------------
+def _get(url: str, max_retries: int = 0, backoff: float = 3.0, **kwargs: Any) -> requests.Response:
+    """GET with optional exponential backoff on transient network errors."""
+    kwargs.setdefault("timeout", TIMEOUT)
+    last_exc: Exception = RuntimeError("unreachable")
+    for attempt in range(max_retries + 1):
+        try:
+            resp = requests.get(url, **kwargs)
+            resp.raise_for_status()
+            return resp
+        except (requests.Timeout, requests.ConnectionError) as exc:
+            last_exc = exc
+            if attempt < max_retries:
+                sleep_s = backoff * (2**attempt)
+                console.print(
+                    f"  [yellow]retry {attempt + 1}/{max_retries} after {sleep_s:.0f}s "
+                    f"({type(exc).__name__})[/yellow]"
+                )
+                time.sleep(sleep_s)
+        except requests.HTTPError as exc:
+            raise exc  # don't retry HTTP errors (4xx/5xx)
+    raise last_exc
+
+
+# ---------------------------------------------------------------------------
+# Binance USDT Perp  (retry on timeout)
 # ---------------------------------------------------------------------------
 def fetch_binance(symbol: str) -> ContractInfo:
     sym = f"{symbol}USDT"
@@ -166,47 +299,43 @@ def fetch_binance(symbol: str) -> ContractInfo:
         taker_fee_pct=TAKER_FEES["Binance"],
     )
     try:
-        # Exchange info
-        r = requests.get(
-            "https://fapi.binance.com/fapi/v1/exchangeInfo", timeout=TIMEOUT
+        r = _get(
+            "https://fapi.binance.com/fapi/v1/exchangeInfo",
+            max_retries=RETRY_ATTEMPTS,
         )
-        r.raise_for_status()
         data = r.json()
         sym_data = next(
-            (s for s in data.get("symbols", []) if s["symbol"] == sym and s.get("contractType") == "PERPETUAL"),
+            (
+                s
+                for s in data.get("symbols", [])
+                if s["symbol"] == sym and s.get("contractType") == "PERPETUAL"
+            ),
             None,
         )
         if sym_data is None:
-            info.error = f"Symbol {sym} not found"
+            info.error = f"Symbol {sym} not found in exchangeInfo"
             return info
 
-        for filt in sym_data.get("filters", []):
-            if filt["filterType"] == "LOT_SIZE":
-                info.min_qty = float(filt["minQty"])
-                info.lot_size = float(filt["stepSize"])
-            elif filt["filterType"] == "PRICE_FILTER":
-                info.tick_size = float(filt["tickSize"])
-            elif filt["filterType"] == "MIN_NOTIONAL":
-                info.min_notional = float(filt.get("notional", 0))
+        parsed = parse_binance_filters(sym_data)
+        info.min_qty = parsed["min_qty"]
+        info.lot_size = parsed["lot_size"]
+        info.tick_size = parsed["tick_size"]
+        info.min_notional = parsed["min_notional"]
 
-        # Price
-        r2 = requests.get(
+        r2 = _get(
             f"https://fapi.binance.com/fapi/v1/ticker/price?symbol={sym}",
-            timeout=TIMEOUT,
+            max_retries=RETRY_ATTEMPTS,
         )
-        r2.raise_for_status()
-        info.price = float(r2.json()["price"])
+        info.price = float(r2.json().get("price", 0))
 
-        # Klines for ATR
-        r3 = requests.get(
+        r3 = _get(
             f"https://fapi.binance.com/fapi/v1/klines?symbol={sym}&interval=15m&limit=20",
-            timeout=TIMEOUT,
+            max_retries=RETRY_ATTEMPTS,
         )
-        r3.raise_for_status()
-        raw_candles = r3.json()
         candles = [
             {"open": c[1], "high": c[2], "low": c[3], "close": c[4]}
-            for c in raw_candles
+            for c in r3.json()
+            if len(c) >= 5
         ]
         info.atr_15m = compute_atr(candles)
 
@@ -217,7 +346,7 @@ def fetch_binance(symbol: str) -> ContractInfo:
 
 
 # ---------------------------------------------------------------------------
-# Bybit Linear (USDT Perp)
+# Bybit Linear (USDT Perp)  — fix: minNotionalValue included
 # ---------------------------------------------------------------------------
 def fetch_bybit(symbol: str) -> ContractInfo:
     sym = f"{symbol}USDT"
@@ -234,47 +363,36 @@ def fetch_bybit(symbol: str) -> ContractInfo:
         taker_fee_pct=TAKER_FEES["Bybit"],
     )
     try:
-        # Instrument info
-        r = requests.get(
+        r = _get(
             f"https://api.bybit.com/v5/market/instruments-info?category=linear&symbol={sym}",
-            timeout=TIMEOUT,
         )
-        r.raise_for_status()
-        data = r.json()
-        items = data.get("result", {}).get("list", [])
+        items = r.json().get("result", {}).get("list", [])
         if not items:
             info.error = f"Symbol {sym} not found"
             return info
-        item = items[0]
-        lot_filter = item.get("lotSizeFilter", {})
-        price_filter = item.get("priceFilter", {})
-        info.min_qty = float(lot_filter.get("minOrderQty", 0))
-        info.lot_size = float(lot_filter.get("qtyStep", 0))
-        info.tick_size = float(price_filter.get("tickSize", 0))
-        info.min_notional = float(lot_filter.get("minOrderAmt", 0))
 
-        # Ticker
-        r2 = requests.get(
+        parsed = parse_bybit_lot_filter(items[0])
+        info.min_qty = parsed["min_qty"]
+        info.lot_size = parsed["lot_size"]
+        info.tick_size = parsed["tick_size"]
+        info.min_notional = parsed["min_notional"]
+
+        r2 = _get(
             f"https://api.bybit.com/v5/market/tickers?category=linear&symbol={sym}",
-            timeout=TIMEOUT,
         )
-        r2.raise_for_status()
         tickers = r2.json().get("result", {}).get("list", [])
         if tickers:
             info.price = float(tickers[0].get("lastPrice", 0))
 
-        # Klines
-        r3 = requests.get(
+        r3 = _get(
             f"https://api.bybit.com/v5/market/kline?category=linear&symbol={sym}&interval=15&limit=20",
-            timeout=TIMEOUT,
         )
-        r3.raise_for_status()
         raw = r3.json().get("result", {}).get("list", [])
-        # Bybit returns newest first: [ts, open, high, low, close, vol, turnover]
-        raw_sorted = list(reversed(raw))
+        raw_sorted = list(reversed(raw))  # Bybit returns newest-first
         candles = [
             {"open": c[1], "high": c[2], "low": c[3], "close": c[4]}
             for c in raw_sorted
+            if len(c) >= 5
         ]
         info.atr_15m = compute_atr(candles)
 
@@ -285,7 +403,7 @@ def fetch_bybit(symbol: str) -> ContractInfo:
 
 
 # ---------------------------------------------------------------------------
-# OKX USDT Perp (SWAP)
+# OKX USDT Perp (SWAP) — marked as "Re-run from VPS" on geo-block
 # ---------------------------------------------------------------------------
 def fetch_okx(symbol: str) -> ContractInfo:
     inst_id = f"{symbol}-USDT-SWAP"
@@ -302,68 +420,50 @@ def fetch_okx(symbol: str) -> ContractInfo:
         taker_fee_pct=TAKER_FEES["OKX"],
     )
     try:
-        # Instrument info
-        r = requests.get(
+        r = _get(
             f"https://www.okx.com/api/v5/public/instruments?instType=SWAP&instId={inst_id}",
-            timeout=TIMEOUT,
         )
-        r.raise_for_status()
-        data = r.json()
-        items = data.get("data", [])
+        items = r.json().get("data", [])
         if not items:
             info.error = f"Instrument {inst_id} not found"
             return info
-        item = items[0]
-        # OKX: lotSz=lot_size (in contracts), minSz=min_qty, tickSz, ctVal=contract_value (USD per contract)
-        lot_sz = float(item.get("lotSz", 0))
-        min_sz = float(item.get("minSz", 0))
-        ct_val = float(item.get("ctVal", 0))  # contract face value in base asset
-        tick_sz = float(item.get("tickSz", 0))
 
-        info.lot_size = lot_sz
-        info.min_qty = min_sz  # in contracts
-        info.tick_size = tick_sz
+        parsed = parse_okx_instrument(items[0])
+        info.min_qty = parsed["min_qty"]
+        info.lot_size = parsed["lot_size"]
+        info.tick_size = parsed["tick_size"]
+        info.min_notional = parsed["min_notional"]
+        info.contract_size = parsed["contract_size"]
 
-        # Ticker
-        r2 = requests.get(
-            f"https://www.okx.com/api/v5/market/ticker?instId={inst_id}",
-            timeout=TIMEOUT,
-        )
-        r2.raise_for_status()
+        r2 = _get(f"https://www.okx.com/api/v5/market/ticker?instId={inst_id}")
         tdata = r2.json().get("data", [])
         if tdata:
             info.price = float(tdata[0].get("last", 0))
 
-        # min notional = min_sz (contracts) × ct_val (base/contract) × price
-        # ct_val is in base asset (e.g., 0.01 BTC per contract)
-        if info.price > 0 and ct_val > 0:
-            info.min_notional = min_sz * ct_val * info.price
-        else:
-            info.min_notional = 0.0
-
-        # Candles
-        r3 = requests.get(
+        r3 = _get(
             f"https://www.okx.com/api/v5/market/candles?instId={inst_id}&bar=15m&limit=20",
-            timeout=TIMEOUT,
         )
-        r3.raise_for_status()
         raw = r3.json().get("data", [])
-        # OKX returns newest first: [ts, open, high, low, close, vol, volCcy, volCcyQuote, confirm]
-        raw_sorted = list(reversed(raw))
+        raw_sorted = list(reversed(raw))  # OKX returns newest-first
         candles = [
             {"open": c[1], "high": c[2], "low": c[3], "close": c[4]}
             for c in raw_sorted
+            if len(c) >= 5
         ]
         info.atr_15m = compute_atr(candles)
 
     except Exception as exc:
+        err_str = str(exc)
+        # OKX geo-restricts some residential IPs; flag for VPS re-run
+        if "Max retries" in err_str or "Connection" in err_str or "refused" in err_str:
+            info.note = "Re-run from VPS (OKX geo-restricts residential IPs)"
         info.error = str(exc)[:80]
 
     return compute_tradability(info)
 
 
 # ---------------------------------------------------------------------------
-# MEXC Futures (contract symbol: BTC_USDT)
+# MEXC Futures — fix: min_notional = minVol * contractSize * price
 # ---------------------------------------------------------------------------
 def fetch_mexc(symbol: str) -> ContractInfo:
     sym = f"{symbol}_USDT"
@@ -380,55 +480,45 @@ def fetch_mexc(symbol: str) -> ContractInfo:
         taker_fee_pct=TAKER_FEES["MEXC"],
     )
     try:
-        # Contract detail
-        r = requests.get(
-            f"https://contract.mexc.com/api/v1/contract/detail?symbol={sym}",
-            timeout=TIMEOUT,
-        )
-        r.raise_for_status()
-        data = r.json()
-        detail = data.get("data", {})
+        r = _get(f"https://contract.mexc.com/api/v1/contract/detail?symbol={sym}")
+        detail = r.json().get("data", {})
         if not detail:
             info.error = f"Symbol {sym} not found"
             return info
 
-        # MEXC: minVol=min_qty (in contracts), contractSize=contract face value
-        info.min_qty = float(detail.get("minVol", 1))
-        contract_size = float(detail.get("contractSize", 1))  # e.g., 0.0001 BTC per contract
-        info.lot_size = float(detail.get("volUnit", 1))
-        info.tick_size = float(detail.get("priceUnit", 0))
+        parsed = parse_mexc_detail(detail)
+        info.min_qty = parsed["min_qty"]
+        info.lot_size = parsed["lot_size"]
+        info.tick_size = parsed["tick_size"]
+        info.min_notional = parsed["min_notional"]
+        info.contract_size = parsed["contract_size"]
 
-        # Ticker
-        r2 = requests.get(
-            f"https://contract.mexc.com/api/v1/contract/ticker?symbol={sym}",
-            timeout=TIMEOUT,
-        )
-        r2.raise_for_status()
+        r2 = _get(f"https://contract.mexc.com/api/v1/contract/ticker?symbol={sym}")
         tdata = r2.json().get("data", {})
         info.price = float(tdata.get("lastPrice", 0))
 
-        # min notional = min_qty (contracts) × contract_size (base/contract) × price
-        if info.price > 0 and contract_size > 0:
-            info.min_notional = info.min_qty * contract_size * info.price
-
-        # Klines: use last 2-hour window
         now_ts = int(time.time())
-        start_ts = now_ts - 7200  # 2 hours ago
-        r3 = requests.get(
-            f"https://contract.mexc.com/api/v1/contract/kline/{sym}?interval=Min15&start={start_ts}&end={now_ts}",
-            timeout=TIMEOUT,
+        start_ts = now_ts - 7200
+        r3 = _get(
+            f"https://contract.mexc.com/api/v1/contract/kline/{sym}"
+            f"?interval=Min15&start={start_ts}&end={now_ts}",
         )
-        r3.raise_for_status()
         kdata = r3.json().get("data", {})
-        # MEXC kline data: {time:[], open:[], high:[], low:[], close:[], ...}
         times = kdata.get("time", [])
         opens = kdata.get("open", [])
         highs = kdata.get("high", [])
         lows = kdata.get("low", [])
         closes = kdata.get("close", [])
+        # guard: use only indices valid in ALL arrays
+        safe_len = min(len(times), len(opens), len(highs), len(lows), len(closes), 20)
         candles = [
-            {"open": str(opens[i]), "high": str(highs[i]), "low": str(lows[i]), "close": str(closes[i])}
-            for i in range(min(len(times), 20))
+            {
+                "open": str(opens[i]),
+                "high": str(highs[i]),
+                "low": str(lows[i]),
+                "close": str(closes[i]),
+            }
+            for i in range(safe_len)
         ]
         info.atr_15m = compute_atr(candles)
 
@@ -439,180 +529,257 @@ def fetch_mexc(symbol: str) -> ContractInfo:
 
 
 # ---------------------------------------------------------------------------
-# Main
+# Orchestration
 # ---------------------------------------------------------------------------
 def run_all() -> list[ContractInfo]:
     results: list[ContractInfo] = []
-
     fetchers = [
         ("Binance", fetch_binance),
         ("Bybit", fetch_bybit),
         ("OKX", fetch_okx),
         ("MEXC", fetch_mexc),
     ]
-
     for exchange_name, fetcher in fetchers:
         for symbol in SYMBOLS:
             console.print(f"[dim]Fetching {exchange_name} {symbol}...[/dim]")
             result = fetcher(symbol)
             results.append(result)
-
     return results
 
 
+# ---------------------------------------------------------------------------
+# Output helpers
+# ---------------------------------------------------------------------------
 def print_table(results: list[ContractInfo]) -> None:
     table = Table(
-        title=f"Phase 0 Feasibility — MAX_MARGIN=${MAX_MARGIN_USD} MAX_LEV={MAX_LEVERAGE}x → MAX_NOTIONAL=${MAX_NOTIONAL_USD:.2f}",
+        title=(
+            f"Phase 0 Feasibility — MAX_MARGIN=${MAX_MARGIN_USD} "
+            f"MAX_LEV={MAX_LEVERAGE}x → PLANNED_NOTIONAL=${PLANNED_NOTIONAL_USD:.2f}"
+        ),
         show_lines=True,
     )
     table.add_column("Exchange", style="cyan", no_wrap=True)
     table.add_column("Symbol", style="cyan", no_wrap=True)
-    table.add_column("Type", no_wrap=True)
     table.add_column("Price", justify="right")
     table.add_column("MinNotional", justify="right")
-    table.add_column("MinQty", justify="right")
-    table.add_column("LotSize", justify="right")
-    table.add_column(f"MaxNot≤${MAX_NOTIONAL_USD:.0f}?", justify="center")
+    table.add_column(f"≤${MAX_NOTIONAL_USD:.0f}?", justify="center")
     table.add_column("ReqLev", justify="right")
     table.add_column("TakerFee%", justify="right")
     table.add_column("MaxStop%", justify="right")
-    table.add_column("TypStop%(ATR)", justify="right")
+    table.add_column("TypStop%", justify="right")
     table.add_column("LiqDist%", justify="right")
     table.add_column("Tradable", justify="center")
 
     for r in results:
         if r.error:
+            note = f" [{r.note}]" if r.note else ""
             table.add_row(
-                r.exchange, r.symbol, r.inst_type,
-                "ERR", "ERR", "ERR", "ERR", "ERR", "ERR", "ERR", "ERR", "ERR", "ERR",
-                f"[red]ERROR: {r.error[:30]}[/red]",
+                r.exchange,
+                r.symbol,
+                "ERR",
+                "ERR",
+                "ERR",
+                "ERR",
+                "ERR",
+                "ERR",
+                "ERR",
+                "ERR",
+                f"[yellow]ERR{note}[/yellow]",
             )
             continue
 
         tradable_str = "[green]YES[/green]" if r.tradable else "[red]NO[/red]"
         max_not_str = "[green]YES[/green]" if r.max_notional_ok else "[red]NO[/red]"
         req_lev_str = f"{r.required_leverage:.1f}x"
-        req_lev_colored = f"[green]{req_lev_str}[/green]" if r.required_leverage <= MAX_LEVERAGE else f"[red]{req_lev_str}[/red]"
+        req_lev_col = (
+            f"[green]{req_lev_str}[/green]"
+            if r.required_leverage <= MAX_LEVERAGE
+            else f"[red]{req_lev_str}[/red]"
+        )
 
         table.add_row(
             r.exchange,
             r.symbol,
-            r.inst_type,
-            f"${r.price:,.2f}" if r.price >= 1 else f"${r.price:.5f}",
+            f"${r.price:,.4f}" if r.price >= 1 else f"${r.price:.5f}",
             f"${r.min_notional_usd:.4f}",
-            f"{r.min_qty}",
-            f"{r.lot_size}",
             max_not_str,
-            req_lev_colored,
+            req_lev_col,
             f"{r.taker_fee_pct:.3f}%",
-            f"{r.max_stop_pct:.3f}%" if r.max_stop_pct > 0 else "N/A",
-            f"{r.typical_stop_pct:.3f}%" if r.typical_stop_pct > 0 else "N/A",
+            f"{r.max_stop_pct:.2f}%" if r.max_stop_pct > 0 else "N/A",
+            f"{r.typical_stop_pct:.3f}%",
             f"{r.liq_distance_pct:.2f}%",
             tradable_str,
         )
 
     console.print(table)
+    console.print(
+        f"[dim]MaxStop% and LiqDist% computed at planned_notional=${PLANNED_NOTIONAL_USD:.2f} "
+        f"(MAX_MARGIN × MAX_LEV). MinNotional check uses exchange floor.[/dim]"
+    )
 
 
 def write_markdown_report(results: list[ContractInfo], output_path: Path) -> None:
     now = datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")
     lines: list[str] = []
     lines.append("# Phase 0 Feasibility Report\n")
-    lines.append(f"Generated: {now}\n")
-    lines.append("\n## Risk Constants Used\n")
+    lines.append(f"Generated: {now} (v2 — fixed MEXC contractSize, Bybit minNotionalValue,\n")
+    lines.append("MaxStop% at planned notional, Binance retry)\n\n")
+    lines.append("## Risk Constants Used\n")
     lines.append(f"- `MAX_MARGIN_USD` = ${MAX_MARGIN_USD}\n")
     lines.append(f"- `MAX_LOSS_USD` = ${MAX_LOSS_USD}\n")
-    lines.append(f"- `SLIPPAGE_PCT` = {SLIPPAGE_PCT}%\n")
+    lines.append(f"- `SLIPPAGE_PCT` = {SLIPPAGE_PCT}% (0.0005 as fraction)\n")
     lines.append(f"- `MAX_LEVERAGE` = {MAX_LEVERAGE}x\n")
     lines.append(f"- `LIQ_BUFFER_MULTIPLE` = {LIQ_BUFFER_MULTIPLE}\n")
     lines.append(f"- `MAINT_MARGIN_PCT` = {MAINT_MARGIN_PCT}%\n")
     lines.append(f"- `MAX_NOTIONAL_USD` = ${MAX_NOTIONAL_USD:.2f} (= margin × leverage)\n")
-    lines.append("\n## Summary Table\n")
     lines.append(
-        "| Exchange | Symbol | Type | Price | MinNotional | MinQty | LotSize"
-        f" | MaxNot≤${MAX_NOTIONAL_USD:.0f}? | ReqLev | TakerFee% | MaxStop% | TypStop%(ATR) | LiqDist% | Tradable |\n"
+        f"- `PLANNED_NOTIONAL_USD` = ${PLANNED_NOTIONAL_USD:.2f} "
+        "(what we size to; MaxStop% and LiqDist% computed here)\n\n"
     )
-    lines.append("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|\n")
+
+    lines.append("## Summary Table\n\n")
+    header = (
+        "| Exchange | Symbol | Price | MinNotional | "
+        f"≤${MAX_NOTIONAL_USD:.0f}? | ReqLev | TakerFee% | "
+        "MaxStop%† | TypStop%(ATR) | LiqDist%† | Tradable |\n"
+    )
+    lines.append(header)
+    lines.append("|---|---|---|---|---|---|---|---|---|---|---|\n")
 
     for r in results:
         if r.error:
+            note = f" {r.note}" if r.note else ""
             lines.append(
-                f"| {r.exchange} | {r.symbol} | {r.inst_type} | ERROR | ERROR | ERROR | ERROR"
-                f" | ERROR | ERROR | ERROR | ERROR | ERROR | ERROR | ERROR: {r.error[:40]} |\n"
+                f"| {r.exchange} | {r.symbol} | ERR | ERR | ERR | ERR | ERR | ERR | ERR | ERR"
+                f" | ERR: {r.error[:35]}{note} |\n"
             )
             continue
         lines.append(
-            f"| {r.exchange} | {r.symbol} | {r.inst_type}"
+            f"| {r.exchange} | {r.symbol}"
             f" | ${r.price:,.4f}"
             f" | ${r.min_notional_usd:.4f}"
-            f" | {r.min_qty}"
-            f" | {r.lot_size}"
             f" | {'YES' if r.max_notional_ok else 'NO'}"
             f" | {r.required_leverage:.1f}x"
             f" | {r.taker_fee_pct:.3f}%"
-            f" | {r.max_stop_pct:.3f}%"
+            f" | {r.max_stop_pct:.2f}%"
             f" | {r.typical_stop_pct:.3f}%"
             f" | {r.liq_distance_pct:.2f}%"
             f" | {'**YES**' if r.tradable else 'NO'} |\n"
         )
 
-    lines.append("\n## Per-Row Math\n")
+    lines.append(
+        "\n† MaxStop% and LiqDist% computed at **planned_notional = "
+        f"${PLANNED_NOTIONAL_USD:.2f}** (MAX_MARGIN × MAX_LEV), "
+        "not at the exchange-minimum notional.\n\n"
+    )
+
+    lines.append("## Per-Row Math\n")
     for r in results:
         lines.append(f"\n### {r.exchange} — {r.symbol} ({r.inst_type})\n")
         if r.error:
-            lines.append(f"**ERROR:** {r.error}\n")
+            note = f"  Note: {r.note}" if r.note else ""
+            lines.append(f"**ERROR:** {r.error}{note}\n")
             continue
+
         lines.append(f"- Price: ${r.price:,.6f}\n")
-        lines.append(f"- min_qty: {r.min_qty}, lot_size: {r.lot_size}, tick_size: {r.tick_size}\n")
-        lines.append(f"- Exchange min_notional: ${r.min_notional:.4f}\n")
-        lines.append(f"- **min_notional_usd** = max(${r.min_notional:.4f}, {r.min_qty} × ${r.price:.4f}) = **${r.min_notional_usd:.4f}**\n")
-        lines.append(f"- max_notional_allowed = ${MAX_NOTIONAL_USD:.2f} → fits? **{'YES' if r.max_notional_ok else 'NO'}**\n")
-        lines.append(f"- **required_leverage** = ${r.min_notional_usd:.4f} / ${MAX_MARGIN_USD} = **{r.required_leverage:.2f}x** (cap: {MAX_LEVERAGE}x)\n")
-        lines.append(f"- round_trip_fee_usd = ${r.min_notional_usd:.4f} × 2 × {r.taker_fee_pct:.3f}% = **${r.round_trip_fee_usd:.5f}**\n")
-        lines.append(f"- net_loss_budget = ${MAX_LOSS_USD} - ${r.round_trip_fee_usd:.5f} = **${r.net_loss_budget:.5f}**\n")
-        if r.min_notional_usd > 0 and r.net_loss_budget > 0:
-            lines.append(f"- **max_stop_pct** = (${r.net_loss_budget:.5f} / ${r.min_notional_usd:.4f} - {SLIPPAGE_PCT/100:.5f}) × 100 = **{r.max_stop_pct:.4f}%**\n")
-        else:
-            lines.append("- max_stop_pct: N/A (net_loss_budget ≤ 0)\n")
-        lines.append(f"- ATR(15m): {r.atr_15m:.6f}\n")
-        lines.append(f"- **typical_stop_pct** = {r.atr_15m:.6f} / {r.price:.6f} × 100 = **{r.typical_stop_pct:.4f}%**\n")
-        req_lev_safe = max(r.required_leverage, 1.0)
-        lines.append(f"- **liq_distance_pct** = (1/{req_lev_safe:.2f} - {MAINT_MARGIN_PCT/100:.4f}) × 100 = **{r.liq_distance_pct:.4f}%**\n")
-        lines.append(f"- Condition 1 (min_notional ≤ max_notional): {'PASS' if r.max_notional_ok else 'FAIL'}\n")
+        lines.append(
+            f"- min_qty={r.min_qty}, contract_size={r.contract_size}, "
+            f"lot_size={r.lot_size}, tick_size={r.tick_size}\n"
+        )
+        lines.append(f"- Exchange min_notional (raw): ${r.min_notional:.4f}\n")
+        lines.append(
+            f"- **min_notional_usd** = max(${r.min_notional:.4f}, "
+            f"{r.min_qty} × {r.contract_size} × ${r.price:.4f}) "
+            f"= **${r.min_notional_usd:.4f}**\n"
+        )
+        lines.append(
+            f"- max_notional_allowed = ${MAX_NOTIONAL_USD:.2f} → "
+            f"fits? **{'YES' if r.max_notional_ok else 'NO'}**\n"
+        )
+        lines.append(
+            f"- **required_leverage** = ${r.min_notional_usd:.4f} / ${MAX_MARGIN_USD} "
+            f"= **{r.required_leverage:.2f}x** (cap: {MAX_LEVERAGE}x)\n"
+        )
+        lines.append(
+            f"- **planned_notional** = ${PLANNED_NOTIONAL_USD:.2f} "
+            f"(MAX_MARGIN × MAX_LEV — stop budget computed here)\n"
+        )
+        lines.append(
+            f"- round_trip_fee = ${PLANNED_NOTIONAL_USD:.2f} × 2 × {r.taker_fee_pct:.3f}% "
+            f"= **${r.round_trip_fee_usd:.5f}**\n"
+        )
+        lines.append(
+            f"- net_loss_budget = ${MAX_LOSS_USD} − ${r.round_trip_fee_usd:.5f} "
+            f"= **${r.net_loss_budget:.5f}**\n"
+        )
+        lines.append(
+            f"- **max_stop_pct** = (${r.net_loss_budget:.5f} / ${PLANNED_NOTIONAL_USD:.2f} "
+            f"− {SLIPPAGE_PCT / 100:.5f}) × 100 = **{r.max_stop_pct:.4f}%**\n"
+        )
+        lines.append(f"- ATR(15m) = {r.atr_15m:.6f}\n")
+        lines.append(
+            f"- **typical_stop_pct** = {r.atr_15m:.6f} / {r.price:.6f} × 100 "
+            f"= **{r.typical_stop_pct:.4f}%**\n"
+        )
+        planned_lev = max(PLANNED_NOTIONAL_USD / MAX_MARGIN_USD, 1.0)
+        lines.append(
+            f"- planned_leverage = ${PLANNED_NOTIONAL_USD:.2f} / ${MAX_MARGIN_USD} "
+            f"= {planned_lev:.1f}x\n"
+        )
+        lines.append(
+            f"- **liq_distance_pct** = (1/{planned_lev:.1f} − {MAINT_MARGIN_PCT/100:.4f}) × 100 "
+            f"= **{r.liq_distance_pct:.4f}%**\n"
+        )
+        cond1 = r.max_notional_ok
         cond2 = r.typical_stop_pct > 0 and r.typical_stop_pct <= r.max_stop_pct
         cond3 = r.liq_distance_pct >= LIQ_BUFFER_MULTIPLE * r.typical_stop_pct
-        lines.append(f"- Condition 2 (typical_stop ≤ max_stop): {'PASS' if cond2 else 'FAIL'} ({r.typical_stop_pct:.4f}% vs {r.max_stop_pct:.4f}%)\n")
-        lines.append(f"- Condition 3 (liq_dist ≥ {LIQ_BUFFER_MULTIPLE}× typical_stop): {'PASS' if cond3 else 'FAIL'} ({r.liq_distance_pct:.4f}% vs {LIQ_BUFFER_MULTIPLE * r.typical_stop_pct:.4f}%)\n")
+        lines.append(
+            f"- Cond 1 (min_notional ≤ ${MAX_NOTIONAL_USD:.2f}): {'PASS' if cond1 else 'FAIL'}\n"
+        )
+        lines.append(
+            f"- Cond 2 (typical_stop ≤ max_stop): {'PASS' if cond2 else 'FAIL'} "
+            f"({r.typical_stop_pct:.4f}% vs {r.max_stop_pct:.4f}%)\n"
+        )
+        lines.append(
+            f"- Cond 3 (liq_dist ≥ {LIQ_BUFFER_MULTIPLE}× typical_stop): "
+            f"{'PASS' if cond3 else 'FAIL'} "
+            f"({r.liq_distance_pct:.4f}% vs {LIQ_BUFFER_MULTIPLE * r.typical_stop_pct:.4f}%)\n"
+        )
         lines.append(f"- **TRADABLE: {'YES' if r.tradable else 'NO'}**\n")
 
-    lines.append("\n## Tradable Summary\n")
-    tradable = [(r.exchange, r.symbol) for r in results if r.tradable and not r.error]
-    not_tradable = [(r.exchange, r.symbol, r.error or "conditions failed") for r in results if not r.tradable and not r.error]
-    errored = [(r.exchange, r.symbol, r.error) for r in results if r.error]
+    # Tradable summary
+    tradable = [r for r in results if r.tradable and not r.error]
+    not_tradable = [r for r in results if not r.tradable and not r.error]
+    errored = [r for r in results if r.error]
 
+    lines.append("\n## Tradable Summary\n")
     lines.append(f"\n**Tradable ({len(tradable)}):**\n")
     if tradable:
-        for exc, sym in tradable:
-            lines.append(f"- {exc} {sym}\n")
+        for r in tradable:
+            lines.append(f"- {r.exchange} {r.symbol}\n")
     else:
         lines.append("- None under current risk constraints ($2 margin, 3x leverage)\n")
 
     lines.append(f"\n**Not tradable ({len(not_tradable)}):**\n")
-    for exc, sym, reason in not_tradable:
-        lines.append(f"- {exc} {sym}: {reason}\n")
+    for r in not_tradable:
+        reason = "conditions failed" if r.tradable is False else "unknown"
+        lines.append(f"- {r.exchange} {r.symbol}: {reason}\n")
 
     if errored:
-        lines.append(f"\n**Errors ({len(errored)}):**\n")
-        for exc, sym, err in errored:
-            lines.append(f"- {exc} {sym}: {err}\n")
+        lines.append(f"\n**Errors / re-run needed ({len(errored)}):**\n")
+        for r in errored:
+            note = f" — {r.note}" if r.note else ""
+            lines.append(f"- {r.exchange} {r.symbol}: {r.error}{note}\n")
 
     lines.append("\n## Owner Action Required\n")
     lines.append(
         "1. Review the tradable/not-tradable table above.\n"
-        "2. If no symbols are tradable, consider raising `max_margin_per_trade_usd` or `max_leverage` in `config/risk.yaml`.\n"
-        "3. Choose exchange + symbols based on this report.\n"
-        "4. See ADR-002 for cap semantics options.\n"
-        "5. Confirm exchange availability in your country (see ADR-001).\n"
+        "2. If no symbols are tradable, consider raising `max_margin_per_trade_usd` "
+        "or `max_leverage` in `config/risk.yaml` (owner-only edit).\n"
+        "3. Re-run this script from a VPS for OKX results.\n"
+        "4. Choose exchange + symbols based on this report.\n"
+        "5. See ADR-002 for cap semantics options.\n"
+        "6. Confirm exchange availability in your country (see ADR-001).\n"
     )
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -621,10 +788,12 @@ def write_markdown_report(results: list[ContractInfo], output_path: Path) -> Non
 
 
 def main() -> None:
-    console.rule("[bold cyan]Phase 0 Feasibility Analysis[/bold cyan]")
+    console.rule("[bold cyan]Phase 0 Feasibility Analysis (v2)[/bold cyan]")
     console.print(
-        f"Risk constants: MAX_MARGIN=${MAX_MARGIN_USD}, MAX_LOSS=${MAX_LOSS_USD}, "
-        f"MAX_LEV={MAX_LEVERAGE}x, MAX_NOTIONAL=${MAX_NOTIONAL_USD:.2f}\n"
+        f"Risk: MAX_MARGIN=${MAX_MARGIN_USD}, MAX_LOSS=${MAX_LOSS_USD}, "
+        f"MAX_LEV={MAX_LEVERAGE}x, PLANNED_NOTIONAL=${PLANNED_NOTIONAL_USD:.2f}\n"
+        f"MaxStop% and LiqDist% computed at ${PLANNED_NOTIONAL_USD:.2f} "
+        "(not at exchange-minimum notional)\n"
     )
 
     results = run_all()
@@ -632,28 +801,34 @@ def main() -> None:
     console.rule("[bold]Results[/bold]")
     print_table(results)
 
-    # Tradable summary
     tradable = [r for r in results if r.tradable and not r.error]
     not_tradable = [r for r in results if not r.tradable and not r.error]
     errors = [r for r in results if r.error]
 
     console.print(f"\n[bold green]Tradable:[/bold green] {len(tradable)}")
     for r in tradable:
-        console.print(f"  [green]✓[/green] {r.exchange} {r.symbol}")
+        console.print(
+            f"  [green]✓[/green] {r.exchange} {r.symbol} "
+            f"(minNot=${r.min_notional_usd:.2f}, "
+            f"reqLev={r.required_leverage:.1f}x, "
+            f"maxStop={r.max_stop_pct:.2f}%, typStop={r.typical_stop_pct:.3f}%)"
+        )
 
     console.print(f"\n[bold red]Not tradable:[/bold red] {len(not_tradable)}")
     for r in not_tradable:
         console.print(
             f"  [red]✗[/red] {r.exchange} {r.symbol} "
-            f"(reqLev={r.required_leverage:.1f}x, maxStop={r.max_stop_pct:.3f}%, typStop={r.typical_stop_pct:.3f}%)"
+            f"(minNot=${r.min_notional_usd:.2f}, "
+            f"reqLev={r.required_leverage:.1f}x, "
+            f"maxStop={r.max_stop_pct:.2f}%, typStop={r.typical_stop_pct:.3f}%)"
         )
 
     if errors:
-        console.print(f"\n[bold yellow]Errors:[/bold yellow] {len(errors)}")
+        console.print(f"\n[bold yellow]Errors / re-run needed:[/bold yellow] {len(errors)}")
         for r in errors:
-            console.print(f"  [yellow]![/yellow] {r.exchange} {r.symbol}: {r.error}")
+            note = f" — {r.note}" if r.note else ""
+            console.print(f"  [yellow]![/yellow] {r.exchange} {r.symbol}: {r.error}{note}")
 
-    # Write markdown report
     report_path = Path(__file__).parent.parent / "docs" / "specs" / "phase0-feasibility.md"
     write_markdown_report(results, report_path)
 
@@ -661,9 +836,9 @@ def main() -> None:
     console.print(
         "\n[bold]Next steps:[/bold]\n"
         "1. Review [cyan]docs/specs/phase0-feasibility.md[/cyan]\n"
-        "2. Read ADR-001 (exchange), ADR-002 (cap semantics), ADR-003 (economics), ADR-004 (TradingView)\n"
-        "3. Confirm: exchange + symbols + cap values + TradingView option\n"
-        "4. Owner approves Phase 0 → Phase 1 begins\n"
+        "2. Re-run from VPS for OKX data\n"
+        "3. Read ADR-001 through ADR-004\n"
+        "4. Owner confirms: exchange + symbols + cap values + TradingView option\n"
     )
 
 
