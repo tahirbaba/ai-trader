@@ -14,6 +14,7 @@ from trader.data.collector import CollectorResult
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _fake_coingecko_response(btc_pct: float = 45.3, eth_pct: float = 18.7) -> MagicMock:
     mock_resp = MagicMock()
     mock_resp.json.return_value = {
@@ -38,6 +39,7 @@ def _fake_yf_ticker(price: float = 100.0) -> MagicMock:
 # Tests
 # ---------------------------------------------------------------------------
 
+
 class TestCrossAssetCollector:
     def test_stale_outside_trading_hours(self):
         """Sunday 10:00 UTC — traditional markets closed → stale True."""
@@ -51,6 +53,7 @@ class TestCrossAssetCollector:
             patch("trader.data.cross_asset._utcnow", return_value=sunday_10am),
         ):
             from trader.data.cross_asset import CrossAssetCollector
+
             result = CrossAssetCollector().collect()
 
         stale = result.data["stale_mask"]

@@ -162,9 +162,7 @@ class NewsCollector:
             title_raw: str = getattr(entry, "title", "") or ""
             summary_raw: str = getattr(entry, "summary", "") or ""
 
-            clean_title, clean_summary, injection_flag = sanitize_news_item(
-                title_raw, summary_raw
-            )
+            clean_title, clean_summary, injection_flag = sanitize_news_item(title_raw, summary_raw)
 
             ts_published: datetime.datetime
             if published_parsed:

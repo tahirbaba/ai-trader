@@ -39,7 +39,9 @@ class TestSentimentCollector:
         """Mock API → fear_greed_value == 42."""
         from trader.data.sentiment import SentimentCollector
 
-        with patch("trader.data.sentiment.requests.get", return_value=_mock_fng_response("42", "Fear")):
+        with patch(
+            "trader.data.sentiment.requests.get", return_value=_mock_fng_response("42", "Fear")
+        ):
             collector = SentimentCollector(enabled=True)
             result = collector.collect()
 

@@ -87,8 +87,7 @@ class ExchangeAnnouncementCollector(BaseCollector):
         """
         for start, end, ann_type, title in self._windows:
             is_maintenance = (
-                ann_type.lower() == "maintain_systems"
-                or "maintenance" in title.lower()
+                ann_type.lower() == "maintain_systems" or "maintenance" in title.lower()
             )
             if not is_maintenance:
                 continue

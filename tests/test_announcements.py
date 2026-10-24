@@ -16,12 +16,8 @@ def _make_rest_client(windows: list[dict] | None = None) -> MagicMock:
             {
                 "title": "System Maintenance",
                 "type": "maintain_systems",
-                "startTime": int(
-                    datetime.datetime(2026, 10, 21, 14, 0, 0).timestamp() * 1000
-                ),
-                "endTime": int(
-                    datetime.datetime(2026, 10, 21, 16, 0, 0).timestamp() * 1000
-                ),
+                "startTime": int(datetime.datetime(2026, 10, 21, 14, 0, 0).timestamp() * 1000),
+                "endTime": int(datetime.datetime(2026, 10, 21, 16, 0, 0).timestamp() * 1000),
             }
         ]
     client.get_announcements.return_value = windows
@@ -107,12 +103,8 @@ class TestExchangeAnnouncementCollector:
             {
                 "title": "Scheduled Maintenance Window",
                 "type": "other",
-                "startTime": int(
-                    datetime.datetime(2026, 10, 21, 14, 0, 0).timestamp() * 1000
-                ),
-                "endTime": int(
-                    datetime.datetime(2026, 10, 21, 16, 0, 0).timestamp() * 1000
-                ),
+                "startTime": int(datetime.datetime(2026, 10, 21, 14, 0, 0).timestamp() * 1000),
+                "endTime": int(datetime.datetime(2026, 10, 21, 16, 0, 0).timestamp() * 1000),
             }
         ]
         client = _make_rest_client(windows)

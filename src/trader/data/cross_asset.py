@@ -45,9 +45,7 @@ def _is_traditional_market_open(now: datetime.datetime) -> bool:
     if now.weekday() >= 5:  # Saturday=5, Sunday=6
         return False
     open_time = now.replace(hour=_MARKET_OPEN_H, minute=_MARKET_OPEN_M, second=0, microsecond=0)
-    close_time = now.replace(
-        hour=_MARKET_CLOSE_H, minute=_MARKET_CLOSE_M, second=0, microsecond=0
-    )
+    close_time = now.replace(hour=_MARKET_CLOSE_H, minute=_MARKET_CLOSE_M, second=0, microsecond=0)
     return open_time <= now < close_time
 
 
@@ -74,9 +72,7 @@ def _fetch_coingecko() -> dict[str, float | None]:
         resp = requests.get(_COINGECKO_GLOBAL, timeout=_REQUEST_TIMEOUT)
         resp.raise_for_status()
         payload: dict[str, Any] = resp.json()
-        percentages: dict[str, float] = payload.get("data", {}).get(
-            "market_cap_percentage", {}
-        )
+        percentages: dict[str, float] = payload.get("data", {}).get("market_cap_percentage", {})
         btc_dom = percentages.get("btc")
         eth_pct = percentages.get("eth")
         # ETH/BTC ratio approximated from market-cap percentages

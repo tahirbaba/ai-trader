@@ -38,6 +38,7 @@ _CPI_DATES_2026: list[datetime.datetime] = [
     datetime.datetime(2026, m, 15, 13, 30, 0) for m in range(1, 13)
 ]
 
+
 # NFP: first Friday of each month at 13:30 UTC
 def _first_friday(year: int, month: int) -> datetime.datetime:
     for day in range(1, 8):
@@ -47,9 +48,7 @@ def _first_friday(year: int, month: int) -> datetime.datetime:
     raise ValueError(f"No Friday found in first 7 days of {year}-{month}")
 
 
-_NFP_DATES_2026: list[datetime.datetime] = [
-    _first_friday(2026, m) for m in range(1, 13)
-]
+_NFP_DATES_2026: list[datetime.datetime] = [_first_friday(2026, m) for m in range(1, 13)]
 
 
 def _build_hardcoded_events() -> list[dict[str, Any]]:
@@ -94,9 +93,7 @@ class MacroCalendar:
                 date_str: str = item.get("date", "")
                 time_str: str = item.get("time", "00:00:00")
                 try:
-                    dt = datetime.datetime.strptime(
-                        f"{date_str} {time_str}", "%Y-%m-%d %H:%M:%S"
-                    )
+                    dt = datetime.datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M:%S")
                 except ValueError:
                     try:
                         dt = datetime.datetime.strptime(date_str, "%Y-%m-%d")
