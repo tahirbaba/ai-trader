@@ -35,9 +35,7 @@ class TestConfigAudit:
         assert "config/app.yaml" in files
         assert "config/risk.yaml" in files
 
-    def test_missing_config_file_skipped_gracefully(
-        self, session: Session, tmp_path: Path
-    ) -> None:
+    def test_missing_config_file_skipped_gracefully(self, session: Session, tmp_path: Path) -> None:
         cfg_dir = tmp_path / "config"
         cfg_dir.mkdir()
         (cfg_dir / "app.yaml").write_text("trading:\n  symbols: []\n")
@@ -50,9 +48,7 @@ class TestConfigAudit:
         assert "config/app.yaml" in files
         assert "config/risk.yaml" not in files
 
-    def test_diff_field_contains_sha256_hash(
-        self, session: Session, tmp_path: Path
-    ) -> None:
+    def test_diff_field_contains_sha256_hash(self, session: Session, tmp_path: Path) -> None:
         cfg_dir = tmp_path / "config"
         cfg_dir.mkdir()
         content = "max_margin_per_trade_usd: 2.0\n"
@@ -68,19 +64,20 @@ class TestConfigAudit:
 
 
 class TestConfigureLogging:
-    def test_configure_logging_attaches_redaction_filter(self, caplog: pytest.LogCaptureFixture) -> None:
+    def test_configure_logging_attaches_redaction_filter(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
         configure_logging("DEBUG")
         root = logging.getLogger()
         has_redaction = any(
-            isinstance(f, SecretRedactionFilter)
-            for h in root.handlers
-            for f in h.filters
+            isinstance(f, SecretRedactionFilter) for h in root.handlers for f in h.filters
         )
         assert has_redaction, "SecretRedactionFilter not attached to any root handler"
 
     def test_configure_logging_emits_json(self) -> None:
         import io
         import json
+
         logger = logging.getLogger("test_configure")
         stream = io.StringIO()
         handler = logging.StreamHandler(stream)

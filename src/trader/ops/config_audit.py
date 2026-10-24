@@ -49,9 +49,11 @@ def record_startup_config(session: Session, repo_root: Path | None = None) -> No
         if not full_path.exists():
             continue
         file_hash = _sha256_file(full_path)
-        repo.add(ConfigAudit(
-            ts=now,
-            file=rel_path,
-            git_sha=git_sha,
-            diff=file_hash,
-        ))
+        repo.add(
+            ConfigAudit(
+                ts=now,
+                file=rel_path,
+                git_sha=git_sha,
+                diff=file_hash,
+            )
+        )

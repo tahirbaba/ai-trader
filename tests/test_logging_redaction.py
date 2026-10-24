@@ -56,8 +56,13 @@ class TestSecretRedactionFilter:
     def test_filter_applied_to_log_record(self) -> None:
         filt = SecretRedactionFilter()
         record = logging.LogRecord(
-            name="test", level=logging.INFO, pathname="", lineno=0,
-            msg="test", args=(), exc_info=None,
+            name="test",
+            level=logging.INFO,
+            pathname="",
+            lineno=0,
+            msg="test",
+            args=(),
+            exc_info=None,
         )
         record.__dict__["extra"] = {"API_KEY": "real-secret", "symbol": "XRP"}
         filt.filter(record)
@@ -68,6 +73,7 @@ class TestSecretRedactionFilter:
 class TestJsonFormatter:
     def test_log_line_is_valid_json(self, caplog: pytest.LogCaptureFixture) -> None:
         import io
+
         formatter = build_json_formatter()
         stream = io.StringIO()
         handler = logging.StreamHandler(stream)

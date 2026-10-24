@@ -31,6 +31,7 @@ from trader.dsor.system_state import SystemStateHelper
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture()
 def engine():
     eng = create_engine("sqlite:///:memory:", echo=False)
@@ -49,17 +50,33 @@ def session(engine):
 # Migration: SQLite always runs; Postgres skipped without TEST_DATABASE_URL
 # ---------------------------------------------------------------------------
 
+
 class TestMigrationSQLite:
     def test_all_tables_created(self, engine) -> None:
         from sqlalchemy import inspect
+
         insp = inspect(engine)
         tables = set(insp.get_table_names())
         expected = {
-            "market_snapshots", "news_items", "macro_events", "tv_alerts",
-            "analyst_reports", "decisions", "lesson_checks", "risk_checks",
-            "orders", "fills", "trades", "shadow_outcomes", "reviews",
-            "lessons_index", "baseline_runs", "risk_events", "llm_calls",
-            "system_state", "config_audit",
+            "market_snapshots",
+            "news_items",
+            "macro_events",
+            "tv_alerts",
+            "analyst_reports",
+            "decisions",
+            "lesson_checks",
+            "risk_checks",
+            "orders",
+            "fills",
+            "trades",
+            "shadow_outcomes",
+            "reviews",
+            "lessons_index",
+            "baseline_runs",
+            "risk_events",
+            "llm_calls",
+            "system_state",
+            "config_audit",
         }
         missing = expected - tables
         assert not missing, f"Missing tables: {missing}"
@@ -73,6 +90,7 @@ class TestMigrationPostgres:
         if "postgres" not in db_url.lower():
             pytest.skip("TEST_DATABASE_URL does not point to Postgres")
         from sqlalchemy import inspect
+
         engine = create_engine(db_url, echo=False)
         Base.metadata.create_all(engine)
         insp = inspect(engine)
@@ -86,6 +104,7 @@ class TestMigrationPostgres:
 # ---------------------------------------------------------------------------
 # Repository CRUD
 # ---------------------------------------------------------------------------
+
 
 class TestMarketSnapshotRepository:
     def test_add_and_get(self, session: Session) -> None:
@@ -109,14 +128,16 @@ class TestMarketSnapshotRepository:
         repo = MarketSnapshotRepository(session)
         base_ts = datetime.datetime(2026, 1, 1, 12, 0, 0)
         for i in range(3):
-            repo.add(MarketSnapshot(
-                ts=base_ts + datetime.timedelta(minutes=i * 15),
-                symbol="DOGE/USDT:USDT",
-                timeframe="15m",
-                ohlcv_json="{}",
-                indicators_json="{}",
-                confluence_score=2,
-            ))
+            repo.add(
+                MarketSnapshot(
+                    ts=base_ts + datetime.timedelta(minutes=i * 15),
+                    symbol="DOGE/USDT:USDT",
+                    timeframe="15m",
+                    ohlcv_json="{}",
+                    indicators_json="{}",
+                    confluence_score=2,
+                )
+            )
         session.commit()
         latest = repo.get_latest_for_symbol("DOGE/USDT:USDT", "15m")
         assert latest is not None
@@ -143,14 +164,16 @@ class TestDecisionRepository:
     def test_get_recent(self, session: Session) -> None:
         repo = DecisionRepository(session)
         for i in range(5):
-            repo.add(Decision(
-                ts=datetime.datetime(2026, 1, 1, i, 0, 0),
-                action="NO_TRADE",
-                symbol="XRP/USDT:USDT",
-                confidence=0.0,
-                confluence_score=0,
-                parse_ok=True,
-            ))
+            repo.add(
+                Decision(
+                    ts=datetime.datetime(2026, 1, 1, i, 0, 0),
+                    action="NO_TRADE",
+                    symbol="XRP/USDT:USDT",
+                    confidence=0.0,
+                    confluence_score=0,
+                    parse_ok=True,
+                )
+            )
         session.commit()
         recent = repo.get_recent(3)
         assert len(recent) == 3
@@ -177,11 +200,13 @@ class TestNewsItemRepository:
 class TestRiskEventRepository:
     def test_add_and_list(self, session: Session) -> None:
         repo = RiskEventRepository(session)
-        repo.add(RiskEvent(
-            ts=datetime.datetime.utcnow(),
-            type="cap_breach_attempt",
-            details="loss exceeds limit",
-        ))
+        repo.add(
+            RiskEvent(
+                ts=datetime.datetime.utcnow(),
+                type="cap_breach_attempt",
+                details="loss exceeds limit",
+            )
+        )
         session.commit()
         events = repo.list_recent(10)
         assert len(events) == 1
@@ -191,18 +216,20 @@ class TestRiskEventRepository:
 class TestOrderRepository:
     def test_add_and_get_open_orders(self, session: Session) -> None:
         repo = OrderRepository(session)
-        repo.add(Order(
-            ts=datetime.datetime.utcnow(),
-            client_order_id="CL001",
-            mode="paper",
-            type="limit",
-            side="buy",
-            reduce_only=False,
-            qty=100.0,
-            price=0.5,
-            status="open",
-            symbol="XRP/USDT:USDT",
-        ))
+        repo.add(
+            Order(
+                ts=datetime.datetime.utcnow(),
+                client_order_id="CL001",
+                mode="paper",
+                type="limit",
+                side="buy",
+                reduce_only=False,
+                qty=100.0,
+                price=0.5,
+                status="open",
+                symbol="XRP/USDT:USDT",
+            )
+        )
         session.commit()
         open_orders = repo.get_open_orders()
         assert len(open_orders) == 1
@@ -223,12 +250,14 @@ class TestSystemStateRepository:
 class TestConfigAuditRepository:
     def test_record_and_list(self, session: Session) -> None:
         repo = ConfigAuditRepository(session)
-        repo.add(ConfigAudit(
-            ts=datetime.datetime.utcnow(),
-            file="config/risk.yaml",
-            git_sha="deadbeef",
-            diff="{}",
-        ))
+        repo.add(
+            ConfigAudit(
+                ts=datetime.datetime.utcnow(),
+                file="config/risk.yaml",
+                git_sha="deadbeef",
+                diff="{}",
+            )
+        )
         session.commit()
         records = repo.list_recent(5)
         assert len(records) == 1
@@ -238,6 +267,7 @@ class TestConfigAuditRepository:
 # ---------------------------------------------------------------------------
 # system_state helpers
 # ---------------------------------------------------------------------------
+
 
 class TestSystemStateHelper:
     def test_mode_default_paper(self, session: Session) -> None:

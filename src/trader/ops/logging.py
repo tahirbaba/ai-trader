@@ -8,9 +8,7 @@ import logging
 import re
 from typing import Any
 
-_REDACT_PATTERN = re.compile(
-    r"(api_key|secret|token|password|webhook_secret)", re.IGNORECASE
-)
+_REDACT_PATTERN = re.compile(r"(api_key|secret|token|password|webhook_secret)", re.IGNORECASE)
 _REDACTED = "***REDACTED***"
 
 

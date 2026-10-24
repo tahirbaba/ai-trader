@@ -160,6 +160,7 @@ def load_settings(
 # Default loader: uses repo-relative config paths and TRADING_MODE env var
 # ---------------------------------------------------------------------------
 
+
 def get_default_settings(repo_root: Path | None = None) -> Settings:
     import os
 

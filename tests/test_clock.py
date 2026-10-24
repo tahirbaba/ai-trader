@@ -20,6 +20,7 @@ def session():
 class TestClockDrift:
     def test_drift_stored_in_system_state(self, session: Session) -> None:
         import time
+
         host_ms = int(time.time() * 1000)
         exchange_ms = host_ms + 200  # 200 ms ahead
         drift = check_clock_drift(session, exchange_ms)
@@ -31,6 +32,7 @@ class TestClockDrift:
 
     def test_negative_drift_is_abs(self, session: Session) -> None:
         import time
+
         host_ms = int(time.time() * 1000)
         exchange_ms = host_ms - 300
         drift = check_clock_drift(session, exchange_ms)

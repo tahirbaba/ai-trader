@@ -168,7 +168,9 @@ class TestMinNotionalUsd:
     def test_binance_btc_uses_min_qty_times_price(self) -> None:
         # min_qty=0.001, contract_size=1.0 (default), price=$81 000
         # → 0.001 * 1.0 * 81000 = $81 > exchange_floor $5
-        info = self._info("Binance", min_qty=0.001, min_notional=5.0, contract_size=1.0, price=81_000.0)
+        info = self._info(
+            "Binance", min_qty=0.001, min_notional=5.0, contract_size=1.0, price=81_000.0
+        )
         result = feas.compute_tradability(info)
         assert result.min_notional_usd == pytest.approx(81.0)
         assert result.max_notional_ok is False  # $81 > $6 cap
@@ -176,7 +178,9 @@ class TestMinNotionalUsd:
     def test_mexc_btc_uses_contract_size(self) -> None:
         # min_qty=1 contract, contractSize=0.0001 BTC, price=$81 000
         # → 1 * 0.0001 * 81000 = $8.10  (not $81 000)
-        info = self._info("MEXC", min_qty=1.0, min_notional=0.0, contract_size=0.0001, price=81_000.0)
+        info = self._info(
+            "MEXC", min_qty=1.0, min_notional=0.0, contract_size=0.0001, price=81_000.0
+        )
         result = feas.compute_tradability(info)
         assert result.min_notional_usd == pytest.approx(8.10)
         assert result.max_notional_ok is False  # $8.10 > $6 cap
@@ -191,7 +195,9 @@ class TestMinNotionalUsd:
 
     def test_exchange_floor_wins_when_larger(self) -> None:
         # exchange_floor=$50 > min_qty*price=$1 → min_notional_usd=$50
-        info = self._info("Binance", min_qty=0.01, min_notional=50.0, contract_size=1.0, price=100.0)
+        info = self._info(
+            "Binance", min_qty=0.01, min_notional=50.0, contract_size=1.0, price=100.0
+        )
         result = feas.compute_tradability(info)
         assert result.min_notional_usd == pytest.approx(50.0)
 
@@ -321,8 +327,10 @@ class TestComputeAtr:
     def test_averages_last_14(self) -> None:
         # 20 candles: open=i, high=i+1, low=i, close=i+0.5
         # For candle i>=1: prev_close=i-0.5, TR=max(1, 1.5, 0.5)=1.5
-        candles = [{"open": str(i), "high": str(i + 1), "low": str(i), "close": str(i + 0.5)}
-                   for i in range(20)]
+        candles = [
+            {"open": str(i), "high": str(i + 1), "low": str(i), "close": str(i + 0.5)}
+            for i in range(20)
+        ]
         atr = feas.compute_atr(candles)
         assert atr == pytest.approx(1.5, abs=0.01)
 
@@ -343,13 +351,18 @@ class TestRobustnessGuards:
         import math
 
         times = [1, 2, 3]
-        opens = [100.0, 101.0]           # shorter
+        opens = [100.0, 101.0]  # shorter
         highs = [101.0, 102.0, 103.0]
         lows = [99.0, 100.0, 101.0]
         closes = [100.5, 101.5, 102.5]
         safe_len = min(len(times), len(opens), len(highs), len(lows), len(closes), 20)
         candles = [
-            {"open": str(opens[i]), "high": str(highs[i]), "low": str(lows[i]), "close": str(closes[i])}
+            {
+                "open": str(opens[i]),
+                "high": str(highs[i]),
+                "low": str(lows[i]),
+                "close": str(closes[i]),
+            }
             for i in range(safe_len)
         ]
         assert len(candles) == 2

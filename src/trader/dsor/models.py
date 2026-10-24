@@ -12,10 +12,25 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    event,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
 from trader.dsor.base import Base
+
+
+def _make_append_only(cls: type) -> type:
+    """Register ORM events that forbid UPDATE and DELETE on *cls*."""
+
+    @event.listens_for(cls, "before_update")
+    def _no_update(mapper: object, connection: object, target: object) -> None:
+        raise RuntimeError(f"{cls.__name__} is append-only; UPDATE is forbidden")
+
+    @event.listens_for(cls, "before_delete")
+    def _no_delete(mapper: object, connection: object, target: object) -> None:
+        raise RuntimeError(f"{cls.__name__} is append-only; DELETE is forbidden")
+
+    return cls
 
 
 def _utcnow() -> datetime.datetime:
@@ -73,6 +88,7 @@ class MacroEvent(Base):
     previous: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 
+@_make_append_only
 class TvAlert(Base):
     __tablename__ = "tv_alerts"
 
@@ -107,6 +123,7 @@ class AnalystReport(Base):
     cost: Mapped[float | None] = mapped_column(Float, nullable=True)
 
 
+@_make_append_only
 class Decision(Base):
     __tablename__ = "decisions"
 
@@ -136,9 +153,7 @@ class LessonCheck(Base):
     __tablename__ = "lesson_checks"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    decision_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("decisions.id"), nullable=False
-    )
+    decision_id: Mapped[int] = mapped_column(Integer, ForeignKey("decisions.id"), nullable=False)
     lessons_matched_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     blocked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     confidence_penalty: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
@@ -148,9 +163,7 @@ class RiskCheck(Base):
     __tablename__ = "risk_checks"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    decision_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("decisions.id"), nullable=False
-    )
+    decision_id: Mapped[int] = mapped_column(Integer, ForeignKey("decisions.id"), nullable=False)
     approved: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     rules_failed_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     adjusted_size: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -166,7 +179,9 @@ class Order(Base):
     decision_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("decisions.id"), nullable=True
     )
-    client_order_id: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
+    client_order_id: Mapped[str] = mapped_column(
+        String(64), nullable=False, unique=True, index=True
+    )
     exchange_order_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     mode: Mapped[str] = mapped_column(String(16), nullable=False, default="paper")
     type: Mapped[str] = mapped_column(String(16), nullable=False)
@@ -219,9 +234,7 @@ class ShadowOutcome(Base):
     __tablename__ = "shadow_outcomes"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    decision_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("decisions.id"), nullable=False
-    )
+    decision_id: Mapped[int] = mapped_column(Integer, ForeignKey("decisions.id"), nullable=False)
     hypothetical_side: Mapped[str] = mapped_column(String(8), nullable=False)
     entry: Mapped[float | None] = mapped_column(Float, nullable=True)
     stop: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -305,9 +318,7 @@ class SystemState(Base):
 
     key: Mapped[str] = mapped_column(String(64), primary_key=True)
     value: Mapped[str | None] = mapped_column(Text, nullable=True)
-    updated_ts: Mapped[datetime.datetime] = mapped_column(
-        DateTime, nullable=False, default=_utcnow
-    )
+    updated_ts: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, default=_utcnow)
 
 
 class ConfigAudit(Base):

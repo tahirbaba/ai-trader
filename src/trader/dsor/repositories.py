@@ -34,7 +34,7 @@ class _BaseRepository[T]:
         return obj
 
     def get_by_id(self, id: int) -> T | None:  # noqa: A002
-        return self._session.get(self._model, id)  # type: ignore[return-value]
+        return self._session.get(self._model, id)
 
 
 class MarketSnapshotRepository(_BaseRepository[MarketSnapshot]):
@@ -60,9 +60,7 @@ class DecisionRepository(_BaseRepository[Decision]):
         stmt = select(Decision).order_by(desc(Decision.ts)).limit(n)
         return list(self._session.scalars(stmt))
 
-    def get_by_symbol_since(
-        self, symbol: str, since: datetime.datetime
-    ) -> list[Decision]:
+    def get_by_symbol_since(self, symbol: str, since: datetime.datetime) -> list[Decision]:
         stmt = (
             select(Decision)
             .where(Decision.symbol == symbol, Decision.ts >= since)
@@ -139,9 +137,8 @@ class LlmCallRepository(_BaseRepository[LlmCall]):
 
     def total_cost_since(self, since: datetime.datetime) -> float:
         from sqlalchemy import func
-        stmt = select(func.coalesce(func.sum(LlmCall.cost_usd), 0.0)).where(
-            LlmCall.ts >= since
-        )
+
+        stmt = select(func.coalesce(func.sum(LlmCall.cost_usd), 0.0)).where(LlmCall.ts >= since)
         result = self._session.scalar(stmt)
         return float(result or 0.0)
 

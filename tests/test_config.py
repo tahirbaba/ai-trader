@@ -11,6 +11,7 @@ from trader.config.settings import RiskSettings, load_settings
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _write_yaml(path: Path, data: dict) -> None:
     path.write_text(yaml.dump(data))
 
@@ -74,6 +75,7 @@ def _minimal_app() -> dict:
 # RiskSettings cross-field validators
 # ---------------------------------------------------------------------------
 
+
 class TestRiskSettingsCrossValidation:
     def test_max_loss_exceeds_margin_rejected(self, tmp_path: Path) -> None:
         risk = _minimal_risk()
@@ -103,8 +105,11 @@ class TestRiskSettingsCrossValidation:
 # Settings: live mode without approval file
 # ---------------------------------------------------------------------------
 
+
 class TestLiveModeGuard:
-    def test_live_mode_without_approval_file_raises(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_live_mode_without_approval_file_raises(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         monkeypatch.setenv("TRADING_MODE", "live")
         risk_path = tmp_path / "risk.yaml"
         _write_yaml(risk_path, _minimal_risk())
@@ -151,6 +156,7 @@ class TestLiveModeGuard:
 # ---------------------------------------------------------------------------
 # Model names come from config, not hardcoded
 # ---------------------------------------------------------------------------
+
 
 class TestModelNamesFromConfig:
     def test_model_names_are_configurable(self, tmp_path: Path) -> None:

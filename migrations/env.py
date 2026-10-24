@@ -20,7 +20,13 @@ target_metadata = Base.metadata
 
 
 def _get_url() -> str:
-    return os.environ.get("DATABASE_URL", config.get_main_option("sqlalchemy.url") or "sqlite:///./trader.db")
+    # -x db_url=... passed via `alembic -x db_url=sqlite:///...` overrides everything
+    x_db_url = context.get_x_argument(as_dictionary=True).get("db_url")
+    if x_db_url:
+        return x_db_url
+    return os.environ.get(
+        "DATABASE_URL", config.get_main_option("sqlalchemy.url") or "sqlite:///./trader.db"
+    )
 
 
 def run_migrations_offline() -> None:
