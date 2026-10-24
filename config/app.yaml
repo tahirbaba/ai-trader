@@ -1,0 +1,33 @@
+# Application configuration (non-sensitive). Model names, symbols, feature flags.
+# Secrets go in .env only.
+
+trading:
+  symbols: []          # filled after Phase 0 owner decision
+  timeframes: [5m, 15m, 1h, 4h, 1d]
+  session_timezone_display: [UTC, Asia/Karachi, Asia/Dubai]
+
+models:
+  screening: claude-haiku-4-5-20251001
+  decision: claude-sonnet-4-6
+  review: claude-sonnet-4-6
+
+feature_flags:
+  tradingview_webhook: false
+  sentiment_analyst: false
+  chart_image_analysis: false
+  onchain_data: false
+
+scheduling:
+  market_data_interval_seconds: 5
+  brain_cycle_interval_seconds: 60
+  position_review_interval_seconds: 30
+  reconciliation_interval_seconds: 60
+  clock_check_interval_seconds: 3600
+
+api:
+  host: 0.0.0.0
+  port: 8000
+
+logging:
+  level: INFO
+  format: json

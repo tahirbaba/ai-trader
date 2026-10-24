@@ -1,0 +1,8 @@
+{
+  "symbol": "BTC_USDT",
+  "minVol": 1,
+  "maxVol": 100000,
+  "contractSize": 0.0001,
+  "volUnit": 1,
+  "priceUnit": 0.1
+}

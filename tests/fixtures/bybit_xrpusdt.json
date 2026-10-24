@@ -1,0 +1,14 @@
+{
+  "lotSizeFilter": {
+    "minOrderQty": "0.1",
+    "maxOrderQty": "10000000",
+    "qtyStep": "0.1",
+    "minOrderAmt": "0",
+    "minNotionalValue": "1"
+  },
+  "priceFilter": {
+    "minPrice": "0.0001",
+    "maxPrice": "10000.0000",
+    "tickSize": "0.0001"
+  }
+}
