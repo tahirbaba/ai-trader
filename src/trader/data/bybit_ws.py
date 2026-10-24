@@ -139,9 +139,7 @@ class BybitWsClient:
             import websockets  # noqa: PLC0415 — optional import kept local
             import websockets.exceptions  # noqa: PLC0415
         except ImportError as exc:
-            raise RuntimeError(
-                "websockets library is required: uv add websockets"
-            ) from exc
+            raise RuntimeError("websockets library is required: uv add websockets") from exc
 
         topics = _build_topics(self._symbols)
         subscribe_msg = json.dumps({"op": "subscribe", "args": topics})

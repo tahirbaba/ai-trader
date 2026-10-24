@@ -220,10 +220,10 @@ class TestMultipleFlags:
         price_history = [0.600, 0.601, 0.0, 0.599, 0.602, 0.598, 10.0]
         flags = monitor.check(
             symbol="XRPUSDT",
-            latest_ts=None,          # stale_data
+            latest_ts=None,  # stale_data
             max_data_age_seconds=60,
             price_history=price_history,
-            clock_drift_ms=5000.0,    # clock_drift
+            clock_drift_ms=5000.0,  # clock_drift
             max_clock_drift_ms=1000,
         )
         assert "stale_data" in flags

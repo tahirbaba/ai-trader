@@ -58,9 +58,7 @@ class DerivativesCollector(BaseCollector):
             next_funding_raw = ticker.get("nextFundingTime")
 
             data["funding_rate"] = float(funding_rate_raw) if funding_rate_raw else None
-            data["next_funding_time_ms"] = (
-                int(next_funding_raw) if next_funding_raw else None
-            )
+            data["next_funding_time_ms"] = int(next_funding_raw) if next_funding_raw else None
             data["open_interest"] = float(oi_raw) if oi_raw else None
             data["mark_price"] = float(mark_price_raw) if mark_price_raw else None
             data["index_price"] = float(index_price_raw) if index_price_raw else None
@@ -70,9 +68,7 @@ class DerivativesCollector(BaseCollector):
             else:
                 data["basis"] = None
 
-            data["last_price"] = (
-                float(ticker["lastPrice"]) if ticker.get("lastPrice") else None
-            )
+            data["last_price"] = float(ticker["lastPrice"]) if ticker.get("lastPrice") else None
             data["bid1"] = float(ticker["bid1Price"]) if ticker.get("bid1Price") else None
             data["ask1"] = float(ticker["ask1Price"]) if ticker.get("ask1Price") else None
         except Exception as exc:

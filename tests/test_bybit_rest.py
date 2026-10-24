@@ -25,9 +25,13 @@ def _make_response(json_body: dict, status_code: int = 200) -> MagicMock:
 
 
 def _kline_payload(rows: list | None = None) -> dict:
-    _rows = rows if rows is not None else [
-        ["1700000000000", "0.60", "0.62", "0.59", "0.61", "1000000", "610000"],
-    ]
+    _rows = (
+        rows
+        if rows is not None
+        else [
+            ["1700000000000", "0.60", "0.62", "0.59", "0.61", "1000000", "610000"],
+        ]
+    )
     return {
         "retCode": 0,
         "retMsg": "OK",
@@ -160,10 +164,13 @@ class TestRetryBehavior:
         """Should raise BybitRestError once all retries are exhausted."""
         fail_resp = _make_response({}, status_code=500)
 
-        with patch(
-            "requests.Session.get",
-            side_effect=[fail_resp, fail_resp, fail_resp],
-        ), patch("time.sleep"):
+        with (
+            patch(
+                "requests.Session.get",
+                side_effect=[fail_resp, fail_resp, fail_resp],
+            ),
+            patch("time.sleep"),
+        ):
             client = BybitRestClient(max_retries=3)
             with pytest.raises(BybitRestError):
                 client.get_kline("XRPUSDT", "5")
@@ -172,10 +179,13 @@ class TestRetryBehavior:
         """ConnectionError triggers a retry."""
         ok_resp = _make_response(_kline_payload())
 
-        with patch(
-            "requests.Session.get",
-            side_effect=[requests.ConnectionError("timeout"), ok_resp],
-        ), patch("time.sleep"):
+        with (
+            patch(
+                "requests.Session.get",
+                side_effect=[requests.ConnectionError("timeout"), ok_resp],
+            ),
+            patch("time.sleep"),
+        ):
             client = BybitRestClient(max_retries=2)
             result = client.get_kline("XRPUSDT", "5")
         assert len(result) == 1

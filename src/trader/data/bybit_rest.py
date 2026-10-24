@@ -56,9 +56,7 @@ class BybitRestClient:
             try:
                 resp = self._session.get(url, params=params, timeout=self._timeout)
                 if resp.status_code >= 500:
-                    raise _RetryableError(
-                        f"Server error {resp.status_code} from {url}"
-                    )
+                    raise _RetryableError(f"Server error {resp.status_code} from {url}")
                 resp.raise_for_status()
                 data: dict[str, Any] = resp.json()
                 if data.get("retCode", 0) != 0:
@@ -84,9 +82,9 @@ class BybitRestClient:
                 if attempt < self._max_retries - 1:
                     time.sleep(wait)
 
-        raise BybitRestError(
-            f"Exhausted {self._max_retries} retries for {url}"
-        ) from (last_exc if not isinstance(last_exc, _RetryableError) else None)
+        raise BybitRestError(f"Exhausted {self._max_retries} retries for {url}") from (
+            last_exc if not isinstance(last_exc, _RetryableError) else None
+        )
 
     # ------------------------------------------------------------------
     # Market-data convenience methods

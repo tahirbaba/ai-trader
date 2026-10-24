@@ -73,9 +73,9 @@ class SoakStats:
             success = self.success[sym]
             errors = self.rest_errors[sym]
             err_pct = (errors / polls * 100) if polls else 0.0
-            flags_str = ", ".join(
-                f"{k}={v}" for k, v in sorted(self.quality_flags[sym].items())
-            ) or "none"
+            flags_str = (
+                ", ".join(f"{k}={v}" for k, v in sorted(self.quality_flags[sym].items())) or "none"
+            )
             rows.append([sym, polls, success, errors, f"{err_pct:.1f}%", flags_str])
 
         table = tabulate(

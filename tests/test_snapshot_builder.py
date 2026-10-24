@@ -17,10 +17,24 @@ def _make_ohlcv() -> CollectorResult:
         symbol="XRPUSDT",
         ts=datetime.datetime(2026, 1, 15, 12, 0, 0),
         data={
-            "5m": {"ts_ms": 1700000000000, "open": 0.60, "high": 0.62, "low": 0.59, "close": 0.61,
-                   "volume": 1000000.0, "turnover": 610000.0},
-            "1h": {"ts_ms": 1699996800000, "open": 0.58, "high": 0.63, "low": 0.57, "close": 0.61,
-                   "volume": 5000000.0, "turnover": 3050000.0},
+            "5m": {
+                "ts_ms": 1700000000000,
+                "open": 0.60,
+                "high": 0.62,
+                "low": 0.59,
+                "close": 0.61,
+                "volume": 1000000.0,
+                "turnover": 610000.0,
+            },
+            "1h": {
+                "ts_ms": 1699996800000,
+                "open": 0.58,
+                "high": 0.63,
+                "low": 0.57,
+                "close": 0.61,
+                "volume": 5000000.0,
+                "turnover": 3050000.0,
+            },
         },
         quality_flags=[],
     )

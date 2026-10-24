@@ -32,9 +32,7 @@ PROTECTED = [
 
 # Build a single alternation pattern for "is this string a protected path?"
 _PROTECTED_PAT = re.compile(
-    r"(?:^|[\s'\"/])("
-    + "|".join(PROTECTED)
-    + r")(?:$|[\s'\"])",
+    r"(?:^|[\s'\"/])(" + "|".join(PROTECTED) + r")(?:$|[\s'\"])",
 )
 
 
@@ -92,8 +90,7 @@ def main() -> None:
     reason = check_command(command)
     if reason:
         print(
-            f"BLOCKED: {reason}. "
-            "Modifying protected files requires explicit owner instruction.",
+            f"BLOCKED: {reason}. " "Modifying protected files requires explicit owner instruction.",
             file=sys.stderr,
         )
         sys.exit(1)
