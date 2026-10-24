@@ -21,16 +21,10 @@ def _utcnow() -> datetime.datetime:
 
 
 def _ms_to_dt(ms: int | None) -> datetime.datetime | None:
-    """Convert epoch milliseconds to a naive datetime.
-
-    Uses ``fromtimestamp`` (local time) for round-trip consistency with
-    test helpers that construct windows using ``datetime.timestamp()``.
-    In production, Bybit epoch ms are UTC but naive datetimes are used
-    consistently throughout this module.
-    """
+    """Convert Bybit epoch milliseconds (UTC) to a naive UTC datetime."""
     if ms is None:
         return None
-    return datetime.datetime.fromtimestamp(ms / 1000.0)
+    return datetime.datetime.utcfromtimestamp(ms / 1000.0)
 
 
 class ExchangeAnnouncementCollector(BaseCollector):

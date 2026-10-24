@@ -7,17 +7,24 @@ from unittest.mock import MagicMock, patch
 
 from trader.data.collector import CollectorResult
 
+_EPOCH = datetime.datetime(1970, 1, 1)
+
+
+def _utc_ms(dt: datetime.datetime) -> int:
+    """Convert a naive UTC datetime to epoch milliseconds without using local TZ."""
+    return int((dt - _EPOCH).total_seconds() * 1000)
+
 
 def _make_rest_client(windows: list[dict] | None = None) -> MagicMock:
     client = MagicMock()
     if windows is None:
-        # Default: one maintenance window 14:00–16:00 on 2026-10-21
+        # Default: one maintenance window 14:00–16:00 on 2026-10-21 UTC
         windows = [
             {
                 "title": "System Maintenance",
                 "type": "maintain_systems",
-                "startTime": int(datetime.datetime(2026, 10, 21, 14, 0, 0).timestamp() * 1000),
-                "endTime": int(datetime.datetime(2026, 10, 21, 16, 0, 0).timestamp() * 1000),
+                "startTime": _utc_ms(datetime.datetime(2026, 10, 21, 14, 0, 0)),
+                "endTime": _utc_ms(datetime.datetime(2026, 10, 21, 16, 0, 0)),
             }
         ]
     client.get_announcements.return_value = windows
@@ -103,8 +110,8 @@ class TestExchangeAnnouncementCollector:
             {
                 "title": "Scheduled Maintenance Window",
                 "type": "other",
-                "startTime": int(datetime.datetime(2026, 10, 21, 14, 0, 0).timestamp() * 1000),
-                "endTime": int(datetime.datetime(2026, 10, 21, 16, 0, 0).timestamp() * 1000),
+                "startTime": _utc_ms(datetime.datetime(2026, 10, 21, 14, 0, 0)),
+                "endTime": _utc_ms(datetime.datetime(2026, 10, 21, 16, 0, 0)),
             }
         ]
         client = _make_rest_client(windows)

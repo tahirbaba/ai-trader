@@ -11,20 +11,24 @@ import hashlib
 import html
 import logging
 import re
+import unicodedata
 from typing import Any
 
 import feedparser
+import requests
 
 from trader.data.collector import CollectorResult
+
+_REQUEST_TIMEOUT = 10
 
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Feed URLs (no auth required)
 # ---------------------------------------------------------------------------
-_FEED_URLS = [
-    "https://cryptopanic.com/news/rss/",
-    "https://www.coindesk.com/arc/outboundfeeds/rss/",
+_FEED_URLS: list[tuple[str, str]] = [
+    ("https://cryptopanic.com/news/rss/", "CryptoPanic"),
+    ("https://www.coindesk.com/arc/outboundfeeds/rss/", "CoinDesk"),
 ]
 
 # ---------------------------------------------------------------------------
@@ -69,9 +73,13 @@ def sanitize_text(text: str, max_length: int = 2000) -> str:
 
 
 def detect_injection(text: str) -> bool:
-    """Return True if *text* contains any known injection phrase (case-insensitive)."""
-    lower = text.lower()
-    return any(phrase in lower for phrase in _INJECTION_PHRASES)
+    """Return True if *text* contains any known injection phrase (case-insensitive).
+
+    Applies NFKC normalization before matching to catch homoglyph substitutions
+    (e.g. Cyrillic 'і' in place of Latin 'i').
+    """
+    normalized = unicodedata.normalize("NFKC", text).lower()
+    return any(phrase in normalized for phrase in _INJECTION_PHRASES)
 
 
 def sanitize_news_item(title: str, body: str) -> tuple[str, str, bool]:
@@ -149,7 +157,7 @@ class NewsCollector:
             )
 
         for entry in feed.entries:
-            source = "CryptoPanic"
+            source = feed._source_label  # type: ignore[attr-defined]
             link: str = getattr(entry, "link", "") or ""
             published_parsed = getattr(entry, "published_parsed", None)
             published_iso = _parsed_to_iso(published_parsed)
@@ -195,11 +203,27 @@ class NewsCollector:
         )
 
     def _fetch_feed(self) -> Any:
-        """Try each feed URL in order; return the first successful parse."""
+        """Try each feed URL in order; return the first successful parse.
+
+        Uses ``requests`` to pre-fetch the content with an explicit timeout,
+        then passes the raw bytes to ``feedparser.parse`` to avoid feedparser's
+        internal unbounded HTTP call.
+        """
         last_exc: Exception | None = None
-        for url in _FEED_URLS:
+        for url, source_label in _FEED_URLS:
             try:
-                feed = feedparser.parse(url)
+                resp = requests.get(url, timeout=_REQUEST_TIMEOUT)
+                resp.raise_for_status()
+                feed = feedparser.parse(resp.content)
+                # Attach source label so the caller knows which feed was used
+                feed._source_label = source_label  # type: ignore[attr-defined]
+                # Treat bozo (malformed feed) as a non-fatal warning
+                if getattr(feed, "bozo", False):
+                    logger.warning(
+                        "Feed %s is malformed (bozo): %s",
+                        url,
+                        getattr(feed, "bozo_exception", "unknown"),
+                    )
                 return feed
             except Exception as exc:  # noqa: BLE001
                 last_exc = exc

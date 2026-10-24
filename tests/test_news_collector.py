@@ -10,31 +10,32 @@ from trader.data.collector import CollectorResult
 def _make_feed_entry(
     title: str = "BTC hits ATH",
     link: str = "https://example.com/btc",
-    source: str = "CryptoPanic",
     summary: str = "Bitcoin surged to record highs.",
     published_parsed: tuple | None = None,
 ) -> MagicMock:
     entry = MagicMock()
     entry.title = title
     entry.link = link
-    entry.get.side_effect = lambda key, default=None: {
-        "title": title,
-        "link": link,
-        "summary": summary,
-    }.get(key, default)
     entry.summary = summary
-    # Use a fixed parsed time if none provided
     if published_parsed is None:
         published_parsed = (2026, 10, 21, 12, 0, 0, 0, 0, 0)
     entry.published_parsed = published_parsed
     return entry
 
 
-def _make_fake_feed(entries: list) -> MagicMock:
+def _make_fake_feed(
+    entries: list, source_label: str = "CryptoPanic", bozo: bool = False
+) -> MagicMock:
     feed = MagicMock()
     feed.entries = entries
-    feed.bozo = False
+    feed.bozo = bozo
+    feed._source_label = source_label
     return feed
+
+
+def _patch_fetch(fake_feed: MagicMock):
+    """Patch NewsCollector._fetch_feed to return fake_feed."""
+    return patch("trader.data.news.NewsCollector._fetch_feed", return_value=fake_feed)
 
 
 class TestNewsCollector:
@@ -45,7 +46,7 @@ class TestNewsCollector:
         entry = _make_feed_entry(link="https://example.com/a")
         fake_feed = _make_fake_feed([entry, entry])
 
-        with patch("trader.data.news.feedparser.parse", return_value=fake_feed):
+        with _patch_fetch(fake_feed):
             collector = NewsCollector(symbols=["BTCUSDT"])
             result = collector.collect()
 
@@ -61,7 +62,7 @@ class TestNewsCollector:
         )
         fake_feed = _make_fake_feed([entry])
 
-        with patch("trader.data.news.feedparser.parse", return_value=fake_feed):
+        with _patch_fetch(fake_feed):
             collector = NewsCollector(symbols=["BTCUSDT"])
             result = collector.collect()
 
@@ -71,16 +72,35 @@ class TestNewsCollector:
         assert result.data["injection_count"] == 1
 
     def test_feed_error_returns_empty_with_flag(self):
-        """feedparser raises → quality_flags=["news_feed_error"], empty items."""
+        """_fetch_feed raises → quality_flags=["news_feed_error"], empty items."""
         from trader.data.news import NewsCollector
 
-        with patch("trader.data.news.feedparser.parse", side_effect=Exception("Network error")):
+        with patch(
+            "trader.data.news.NewsCollector._fetch_feed",
+            side_effect=Exception("Network error"),
+        ):
             collector = NewsCollector(symbols=["BTCUSDT"])
             result = collector.collect()
 
         assert "news_feed_error" in result.quality_flags
         assert result.data["items"] == []
         assert result.data["count"] == 0
+
+    def test_bozo_feed_still_processes_entries(self):
+        """Malformed (bozo) feed: entries are still processed, no exception raised."""
+        from trader.data.news import NewsCollector
+
+        entry = _make_feed_entry(title="BTC surges", link="https://example.com/bozo")
+        # bozo=True means feedparser detected a malformed feed
+        fake_feed = _make_fake_feed([entry], bozo=True)
+
+        with _patch_fetch(fake_feed):
+            collector = NewsCollector(symbols=["BTCUSDT"])
+            result = collector.collect()
+
+        # Should still process entries without raising
+        assert isinstance(result, CollectorResult)
+        assert result.data["count"] == 1
 
     def test_item_count_in_data(self):
         """data['count'] == len(data['items'])."""
@@ -93,7 +113,7 @@ class TestNewsCollector:
         ]
         fake_feed = _make_fake_feed(entries)
 
-        with patch("trader.data.news.feedparser.parse", return_value=fake_feed):
+        with _patch_fetch(fake_feed):
             collector = NewsCollector(symbols=["BTCUSDT"])
             result = collector.collect()
 
@@ -107,7 +127,7 @@ class TestNewsCollector:
         entry = _make_feed_entry(title="BTC rises 5% on ETF news")
         fake_feed = _make_fake_feed([entry])
 
-        with patch("trader.data.news.feedparser.parse", return_value=fake_feed):
+        with _patch_fetch(fake_feed):
             collector = NewsCollector(symbols=["BTCUSDT"])
             result = collector.collect()
 
@@ -120,7 +140,7 @@ class TestNewsCollector:
 
         fake_feed = _make_fake_feed([])
 
-        with patch("trader.data.news.feedparser.parse", return_value=fake_feed):
+        with _patch_fetch(fake_feed):
             collector = NewsCollector(symbols=["BTCUSDT"])
             result = collector.collect()
 
@@ -133,10 +153,24 @@ class TestNewsCollector:
         entry = _make_feed_entry(link="https://example.com/persistent")
         fake_feed = _make_fake_feed([entry])
 
-        with patch("trader.data.news.feedparser.parse", return_value=fake_feed):
+        with _patch_fetch(fake_feed):
             collector = NewsCollector(symbols=["BTCUSDT"])
             result1 = collector.collect()
             result2 = collector.collect()  # second call, same instance
 
         assert result1.data["count"] == 1
         assert result2.data["count"] == 0  # already seen
+
+    def test_source_label_from_coindesk_feed(self):
+        """Items from CoinDesk feed carry 'CoinDesk' as source in dedupe hash."""
+        from trader.data.news import NewsCollector
+
+        entry = _make_feed_entry(title="ETH update", link="https://coindesk.com/eth")
+        fake_feed = _make_fake_feed([entry], source_label="CoinDesk")
+
+        with _patch_fetch(fake_feed):
+            collector = NewsCollector(symbols=["ETHUSDT"])
+            result = collector.collect()
+
+        assert result.data["count"] == 1
+        assert result.data["items"][0]["source"] == "CoinDesk"
