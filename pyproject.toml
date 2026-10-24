@@ -6,6 +6,13 @@ dependencies = [
     "requests>=2.32",
     "tabulate>=0.9",
     "rich>=13.0",
+    # Phase 1: config + DSOR
+    "pydantic>=2.7",
+    "pydantic-settings>=2.3",
+    "pyyaml>=6.0",
+    "sqlalchemy>=2.0",
+    "alembic>=1.13",
+    "python-dotenv>=1.0",
 ]
 
 [project.optional-dependencies]
@@ -15,6 +22,8 @@ dev = [
     "mypy>=1.11",
     "types-requests",
     "types-tabulate",
+    "types-pyyaml",
+    "pytest-mock>=3.14",
 ]
 
 [build-system]
