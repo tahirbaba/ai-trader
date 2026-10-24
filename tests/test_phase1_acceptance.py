@@ -32,6 +32,7 @@ from trader.ops.logging import redact_dict
 # Helpers shared with other test modules
 # ---------------------------------------------------------------------------
 
+
 def _minimal_risk() -> dict:
     return {
         "mode_default": "paper",
@@ -91,6 +92,7 @@ def _minimal_app() -> dict:
 # (a) Alembic upgrade head + downgrade base on SQLite
 # ---------------------------------------------------------------------------
 
+
 class TestAlembicMigrationRoundTrip:
     """Acceptance (a): alembic upgrade head AND downgrade base work on SQLite."""
 
@@ -109,7 +111,8 @@ class TestAlembicMigrationRoundTrip:
         # First upgrade, then downgrade
         subprocess.run(
             [sys.executable, "-m", "alembic", "-x", f"db_url=sqlite:///{db}", "upgrade", "head"],
-            capture_output=True, cwd=Path(__file__).parent.parent,
+            capture_output=True,
+            cwd=Path(__file__).parent.parent,
         )
         result = subprocess.run(
             [sys.executable, "-m", "alembic", "-x", f"db_url=sqlite:///{db}", "downgrade", "base"],
@@ -135,6 +138,7 @@ class TestAlembicMigrationRoundTrip:
 # ---------------------------------------------------------------------------
 # (b) Live mode guard
 # ---------------------------------------------------------------------------
+
 
 class TestLiveModeGuard:
     """Acceptance (b): app refuses to start in live mode without live_approval.yaml."""
@@ -166,6 +170,7 @@ class TestLiveModeGuard:
         from sqlalchemy.orm import Session
 
         from trader.dsor.system_state import SystemStateHelper
+
         engine = create_engine("sqlite:///:memory:")
         Base.metadata.create_all(engine)
         with Session(engine) as s:
@@ -177,6 +182,7 @@ class TestLiveModeGuard:
 # ---------------------------------------------------------------------------
 # (c) Cross-field config validation
 # ---------------------------------------------------------------------------
+
 
 class TestCrossFieldValidation:
     """Acceptance (c): cross-field config validation rejects inconsistent values."""
@@ -209,6 +215,7 @@ class TestCrossFieldValidation:
 # ---------------------------------------------------------------------------
 # (d) decisions and tv_alerts are append-only
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture()
 def mem_session():
@@ -279,6 +286,7 @@ class TestAppendOnly:
 # ---------------------------------------------------------------------------
 # (e) Secret redaction on a fake key
 # ---------------------------------------------------------------------------
+
 
 class TestSecretRedaction:
     """Acceptance (e): secret redaction works on a fake key."""

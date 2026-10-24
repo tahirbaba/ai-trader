@@ -13,6 +13,8 @@ dependencies = [
     "sqlalchemy>=2.0",
     "alembic>=1.13",
     "python-dotenv>=1.0",
+    # Phase 2A: WebSocket support
+    "websockets>=13.0",
 ]
 
 [project.optional-dependencies]

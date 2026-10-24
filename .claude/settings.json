@@ -9,6 +9,15 @@
             "command": "bash .claude/hooks/block_sensitive.sh"
           }
         ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 .claude/hooks/block_bash_writes.py"
+          }
+        ]
       }
     ]
   }
