@@ -193,6 +193,19 @@ class BybitRestClient:
             ts = data.get("time")
         return int(ts) if ts else 0
 
+    def get_announcements(
+        self,
+        locale: str = "en-US",
+        ann_type: str = "maintain_systems",
+    ) -> list[dict[str, Any]]:
+        """Return announcement list from Bybit V5 announcements endpoint."""
+        resp = self.get(
+            "/v5/announcements/index",
+            {"locale": locale, "type": ann_type},
+        )
+        result: list[dict[str, Any]] = resp.get("result", {}).get("list", [])
+        return result
+
     def close(self) -> None:
         """Release the underlying requests.Session."""
         self._session.close()

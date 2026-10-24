@@ -21,12 +21,17 @@ from typing import Any
 
 from tabulate import tabulate
 
+from trader.data.announcements import ExchangeAnnouncementCollector
 from trader.data.bybit_rest import BybitRestClient, BybitRestError
 from trader.data.bybit_ws import BybitWsClient
+from trader.data.cross_asset import CrossAssetCollector
 from trader.data.derivatives import DerivativesCollector
+from trader.data.macro import MacroCalendar
 from trader.data.market import BookCollector, OHLCVCollector
+from trader.data.news import NewsCollector
 from trader.data.orderflow import OrderFlowCollector
 from trader.data.quality import DataQualityMonitor
+from trader.data.sentiment import SentimentCollector
 from trader.data.session import format_for_display, tag_session
 from trader.data.snapshot_builder import build_snapshot
 from trader.ops.logging import configure_logging
@@ -113,12 +118,45 @@ def run_soak(duration_seconds: int = DEFAULT_DURATION) -> bool:
     end_time = time.time() + duration_seconds
     price_history: dict[str, list[float]] = defaultdict(list)
 
+    # Phase 2B: initialise context collectors (instantiated once, polled each round)
+    cross_asset_collector = CrossAssetCollector()
+    news_collector = NewsCollector(symbols=SYMBOLS)
+    macro_calendar = MacroCalendar()
+    sentiment_collector = SentimentCollector(enabled=True)
+    announcement_collector = ExchangeAnnouncementCollector(rest_client=rest_client)
+
     try:
         while time.time() < end_time:
             now_utc = datetime.datetime.utcnow()
             session = tag_session(now_utc)
             display_ts = format_for_display(now_utc)
             print(f"\n[{display_ts}]  session={session}", flush=True)
+
+            # --- Phase 2B: context collectors (once per poll round) ----------
+            cross_asset_result = cross_asset_collector.collect()
+            news_result = news_collector.collect()
+            macro_calendar.collect()
+            sentiment_result = sentiment_collector.collect()
+            announce_result = announcement_collector.collect()
+
+            dxy = cross_asset_result.data.get("DXY")
+            dxy_str = f"{dxy:.3f}" if dxy is not None else "N/A"
+            stale = cross_asset_result.data.get("stale_mask", {})
+            stale_str = ",".join(k for k, v in stale.items() if v) or "none"
+            fg = sentiment_result.data.get("fear_greed_value", "N/A")
+            fg_label = sentiment_result.data.get("fear_greed_label", "")
+            macro_blackout, macro_reason = macro_calendar.is_blackout(now_utc)
+            ann_blackout = announce_result.data.get("is_blackout_now", False)
+            news_count = news_result.data.get("count", 0)
+            inject_count = news_result.data.get("injection_count", 0)
+            print(
+                f"  [CONTEXT]  DXY={dxy_str}  stale=[{stale_str}]"
+                f"  F&G={fg}({fg_label})"
+                f"  macro_blackout={macro_blackout}"
+                f"  ann_blackout={ann_blackout}"
+                f"  news={news_count}(inj={inject_count})",
+                flush=True,
+            )
 
             for sym in SYMBOLS:
                 success = True

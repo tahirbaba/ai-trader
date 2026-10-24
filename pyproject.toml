@@ -15,6 +15,9 @@ dependencies = [
     "python-dotenv>=1.0",
     # Phase 2A: WebSocket support
     "websockets>=13.0",
+    # Phase 2B: cross-asset + news
+    "yfinance>=0.2",
+    "feedparser>=6.0",
 ]
 
 [project.optional-dependencies]
