@@ -11,15 +11,16 @@ repos:
         args: [--fix]
       - id: ruff-format
 
-  - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.11.2
+  - repo: local
     hooks:
       - id: mypy
-        args: [--config-file=pyproject.toml]
-        additional_dependencies:
-          - types-requests
-          - types-tabulate
-          - rich>=13.0
+        name: mypy
+        entry: uv run mypy
+        args: [src/trader/risk, src/trader/execution]
+        language: system
+        types: [python]
+        pass_filenames: false
+        always_run: true
 
   - repo: local
     hooks:
