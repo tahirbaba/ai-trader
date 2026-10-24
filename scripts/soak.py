@@ -106,9 +106,9 @@ def run_soak(duration_seconds: int = DEFAULT_DURATION) -> bool:
 
     ws_client = BybitWsClient(SYMBOLS, _ws_callback)
     ws_client.start()
-    print(f"Starting {duration_seconds}s soak test. Polling every {POLL_INTERVAL}s.")
-    print(f"Symbols: {', '.join(SYMBOLS)}")
-    print("-" * 60)
+    print(f"Starting {duration_seconds}s soak test. Polling every {POLL_INTERVAL}s.", flush=True)
+    print(f"Symbols: {', '.join(SYMBOLS)}", flush=True)
+    print("-" * 60, flush=True)
 
     end_time = time.time() + duration_seconds
     price_history: dict[str, list[float]] = defaultdict(list)
@@ -118,7 +118,7 @@ def run_soak(duration_seconds: int = DEFAULT_DURATION) -> bool:
             now_utc = datetime.datetime.utcnow()
             session = tag_session(now_utc)
             display_ts = format_for_display(now_utc)
-            print(f"\n[{display_ts}]  session={session}")
+            print(f"\n[{display_ts}]  session={session}", flush=True)
 
             for sym in SYMBOLS:
                 success = True
@@ -178,7 +178,7 @@ def run_soak(duration_seconds: int = DEFAULT_DURATION) -> bool:
 
                 close_str = f"{latest_close:.5f}" if latest_close else "N/A"
                 flags_str = ", ".join(all_flags) if all_flags else "ok"
-                print(f"  [{sym}]  close={close_str}  flags=[{flags_str}]")
+                print(f"  [{sym}]  close={close_str}  flags=[{flags_str}]", flush=True)
 
             # Update WS reconnect count
             stats.ws_reconnects = ws_client.reconnect_count

@@ -89,14 +89,14 @@ class DataQualityMonitor:
                 std = math.sqrt(variance)
                 if std > 0 and abs(latest_price - mean) > 5 * std:
                     flags.append("outlier_price")
-                logger.debug(
-                    "DataQualityMonitor outlier_price",
-                    extra={
-                        "symbol": symbol,
-                        "price": latest_price,
-                        "mean": round(mean, 6),
-                        "std": round(std, 6),
-                    },
-                )
+                    logger.debug(
+                        "DataQualityMonitor outlier_price",
+                        extra={
+                            "symbol": symbol,
+                            "price": latest_price,
+                            "mean": round(mean, 6),
+                            "std": round(std, 6),
+                        },
+                    )
 
         return flags

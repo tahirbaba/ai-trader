@@ -114,9 +114,19 @@ class BookCollector(BaseCollector):
 
             best_bid = float(bids[0][0]) if bids else None
             best_ask = float(asks[0][0]) if asks else None
-            spread = (best_ask - best_bid) if (best_bid and best_ask) else None
-            mid = ((best_bid + best_ask) / 2) if (best_bid and best_ask) else None
-            spread_pct = (spread / mid * 100) if (spread and mid) else None
+            spread = (
+                (best_ask - best_bid) if (best_bid is not None and best_ask is not None) else None
+            )
+            mid = (
+                ((best_bid + best_ask) / 2)
+                if (best_bid is not None and best_ask is not None)
+                else None
+            )
+            spread_pct = (
+                (spread / mid * 100)
+                if (spread is not None and mid is not None and mid != 0)
+                else None
+            )
 
             data: dict[str, Any] = {
                 "best_bid": best_bid,

@@ -11,6 +11,7 @@ import asyncio
 import json
 import logging
 import random
+import ssl
 import threading
 from collections.abc import Callable
 from typing import Any
@@ -144,13 +145,21 @@ class BybitWsClient:
         topics = _build_topics(self._symbols)
         subscribe_msg = json.dumps({"op": "subscribe", "args": topics})
 
+        try:
+            import certifi  # noqa: PLC0415
+
+            _ssl_ctx: ssl.SSLContext | bool = ssl.create_default_context(cafile=certifi.where())
+        except ImportError:
+            _ssl_ctx = True  # fallback: default SSL context
+
         logger.info("BybitWsClient connecting", extra={"url": self._ws_url})
         async with websockets.connect(
             self._ws_url,
+            ssl=_ssl_ctx,
+            open_timeout=10,
             ping_interval=None,  # we handle pings manually
             close_timeout=5,
         ) as ws:
-            self._connected = True
             logger.info("BybitWsClient connected")
             await ws.send(subscribe_msg)
 
@@ -170,11 +179,17 @@ class BybitWsClient:
                     if op == "pong":
                         continue  # handled
                     if op == "subscribe":
-                        success = msg.get("success", False)
-                        logger.debug(
-                            "BybitWsClient subscription ack",
-                            extra={"success": success, "msg": msg},
-                        )
+                        if not msg.get("success", False):
+                            logger.warning(
+                                "BybitWsClient subscription rejected",
+                                extra={"msg": msg},
+                            )
+                        else:
+                            self._connected = True
+                            logger.debug(
+                                "BybitWsClient subscribed",
+                                extra={"msg": msg},
+                            )
                         continue
 
                     try:
@@ -195,5 +210,6 @@ class BybitWsClient:
             await asyncio.sleep(_PING_INTERVAL)
             try:
                 await ws.send(json.dumps({"op": "ping"}))
-            except Exception:
+            except Exception as exc:
+                logger.warning("BybitWsClient ping failed", extra={"error": str(exc)})
                 break
