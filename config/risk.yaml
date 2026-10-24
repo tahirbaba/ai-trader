@@ -34,5 +34,5 @@ max_clock_drift_ms: 1000
 max_spread_pct: 0.1
 min_confidence: 0.7
 min_confluence_score: 3
-allowed_symbols: []
+allowed_symbols: ["XRP/USDT:USDT", "DOGE/USDT:USDT"]
 total_llm_budget_usd_per_day: 5.0
