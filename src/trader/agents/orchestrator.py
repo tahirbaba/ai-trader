@@ -536,14 +536,20 @@ class TradeCycleOrchestrator:
             MarketState,
         )
 
-        # Build DecisionInput from BrainDecision
+        # Build DecisionInput from BrainDecision.
+        # For non-trading actions (NO_TRADE/HOLD/CLOSE) entry_price may be 0;
+        # use a sentinel of 1.0 so Pydantic's gt=0 passes — the gate's action_filter
+        # (check 3) will reject these before reaching any price-dependent check.
+        _entry = brain_decision.entry_price if brain_decision.entry_price > 0 else 1.0
+        _stop = brain_decision.stop_loss if brain_decision.stop_loss > 0 else 0.0
+        _tp = brain_decision.take_profit if brain_decision.take_profit > 0 else 0.0
         decision_input = DecisionInput(
             action=brain_decision.action,
             symbol=symbol,
             side=brain_decision.action.lower() if brain_decision.action in ("LONG", "SHORT") else "none",
-            entry_price=brain_decision.entry_price,
-            stop_loss=brain_decision.stop_loss,
-            take_profit=brain_decision.take_profit,
+            entry_price=_entry,
+            stop_loss=_stop,
+            take_profit=_tp,
             confidence=brain_decision.confidence,
             confluence_score=int(feature_pack.get("confluence_score", 0)),
         )
@@ -562,10 +568,12 @@ class TradeCycleOrchestrator:
         )
 
         # Build MarketState from feature_pack
+        _live_price = float(feature_pack.get("live_price", _entry))
+        _snap_price = float(feature_pack.get("snapshot_price", _entry))
         market_state = MarketState(
             symbol=symbol,
-            live_price=float(feature_pack.get("live_price", brain_decision.entry_price)),
-            snapshot_price=float(feature_pack.get("snapshot_price", brain_decision.entry_price)),
+            live_price=_live_price if _live_price > 0 else _entry,
+            snapshot_price=_snap_price if _snap_price > 0 else _entry,
             atr_14=feature_pack.get("atr_14"),
             spread_pct=feature_pack.get("spread_pct"),
             funding_rate=feature_pack.get("funding_rate"),

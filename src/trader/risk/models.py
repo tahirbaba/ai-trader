@@ -5,9 +5,11 @@ Pure data models — no SQLAlchemy, no I/O.
 
 from __future__ import annotations
 
+import math
 from datetime import datetime
+from typing import Annotated
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 
 
 class DecisionInput(BaseModel):
@@ -16,12 +18,19 @@ class DecisionInput(BaseModel):
     action: str  # LONG | SHORT | CLOSE | HOLD | NO_TRADE
     symbol: str
     side: str  # long | short | close | hold | no_trade
-    entry_price: float
-    stop_loss: float
-    take_profit: float  # single TP only (Phase 5)
+    entry_price: Annotated[float, Field(gt=0)]
+    stop_loss: Annotated[float, Field(ge=0)]
+    take_profit: Annotated[float, Field(ge=0)]
     confidence: float  # 0-1; after LessonFilter penalty applied
     confluence_score: int
     entry_type: str = "limit"  # market | limit
+
+    @field_validator("entry_price", "stop_loss", "take_profit", mode="after")
+    @classmethod
+    def _must_be_finite(cls, v: float) -> float:
+        if not math.isfinite(v):
+            raise ValueError(f"price fields must be finite, got {v}")
+        return v
 
 
 class AccountState(BaseModel):
@@ -41,8 +50,8 @@ class MarketState(BaseModel):
     """Current market state at time of RiskGate evaluation."""
 
     symbol: str
-    live_price: float  # freshest price (for entry-drift check)
-    snapshot_price: float  # price at time of brain decision
+    live_price: Annotated[float, Field(gt=0)]
+    snapshot_price: Annotated[float, Field(gt=0)]  # must be positive; zero treated as stale
     atr_14: float | None
     spread_pct: float | None
     funding_rate: float | None
@@ -59,7 +68,7 @@ class LessonCheckInput(BaseModel):
     """Result from LessonFilter passed into RiskGate."""
 
     blocked: bool
-    confidence_penalty: float
+    confidence_penalty: Annotated[float, Field(ge=0.0, le=1.0)]
 
 
 class RiskVerdict(BaseModel):
