@@ -141,7 +141,7 @@ class NewsCollector:
 
     def collect(self) -> CollectorResult:
         """Fetch and return news items."""
-        now = datetime.datetime.utcnow()
+        now = datetime.datetime.now(datetime.UTC)
         items: list[dict[str, Any]] = []
         quality_flags: list[str] = []
 

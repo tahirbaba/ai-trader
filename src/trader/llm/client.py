@@ -192,7 +192,7 @@ class LlmClient:
 
             session = self._session_factory()
             try:
-                today_start = datetime.datetime.utcnow().replace(
+                today_start = datetime.datetime.now(datetime.UTC).replace(
                     hour=0, minute=0, second=0, microsecond=0
                 )
                 repo = LlmCallRepository(session)
@@ -220,7 +220,7 @@ class LlmClient:
             session = self._session_factory()
             try:
                 row = LlmCall(
-                    ts=datetime.datetime.utcnow(),
+                    ts=datetime.datetime.now(datetime.UTC),
                     purpose=purpose,
                     model=model,
                     input_tokens=input_tokens,

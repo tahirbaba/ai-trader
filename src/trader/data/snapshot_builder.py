@@ -36,7 +36,7 @@ def build_snapshot(
             all_flags.extend(result.quality_flags)
 
     # Determine canonical timestamp
-    ts: datetime.datetime = datetime.datetime.utcnow()
+    ts: datetime.datetime = datetime.datetime.now(datetime.UTC)
     for result in [ohlcv, derivatives]:
         if result is not None and result.ts is not None:
             ts = result.ts

@@ -38,7 +38,7 @@ class SecretRedactionFilter(logging.Filter):
 class _JsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         payload: dict[str, Any] = {
-            "timestamp": datetime.datetime.utcfromtimestamp(record.created).isoformat() + "Z",
+            "timestamp": datetime.datetime.fromtimestamp(record.created, datetime.UTC).isoformat() + "Z",
             "level": record.levelname,
             "logger": record.name,
             "message": record.getMessage(),

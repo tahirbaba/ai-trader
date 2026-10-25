@@ -133,27 +133,37 @@ class MacroCalendar:
         (True, event_name)  if within [event_time - before_min, event_time + after_min].
         (False, "")         otherwise.
         """
+        # Normalise to aware UTC so naive test inputs compare correctly.
+        if now.tzinfo is None:
+            now = now.replace(tzinfo=datetime.UTC)
         window_before = datetime.timedelta(minutes=before_min)
         window_after = datetime.timedelta(minutes=after_min)
 
         for event in self._events:
             event_dt: datetime.datetime = event["dt"]
+            # Normalise event_dt if stored as naive (hardcoded calendar entries).
+            if event_dt.tzinfo is None:
+                event_dt = event_dt.replace(tzinfo=datetime.UTC)
             if (event_dt - window_before) <= now <= (event_dt + window_after):
                 return True, event["name"]
         return False, ""
 
     def upcoming(self, n: int = 5) -> list[dict[str, Any]]:
         """Return the next *n* events sorted by datetime."""
-        now = datetime.datetime.utcnow()
+        now = datetime.datetime.now(datetime.UTC)
+
+        def _aware(dt: datetime.datetime) -> datetime.datetime:
+            return dt if dt.tzinfo is not None else dt.replace(tzinfo=datetime.UTC)
+
         future = sorted(
-            [e for e in self._events if e["dt"] >= now],
+            [e for e in self._events if _aware(e["dt"]) >= now],
             key=lambda e: e["dt"],
         )
         return future[:n]
 
     def collect(self) -> CollectorResult:
         """Return macro calendar result."""
-        now = datetime.datetime.utcnow()
+        now = datetime.datetime.now(datetime.UTC)
         blackout, reason = self.is_blackout(now)
         upcoming_events = self.upcoming(10)
 

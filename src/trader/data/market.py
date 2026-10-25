@@ -45,7 +45,7 @@ class OHLCVCollector(BaseCollector):
 
     def collect(self) -> CollectorResult:
         """Return the latest candle for each configured timeframe."""
-        now = datetime.datetime.utcnow()
+        now = datetime.datetime.now(datetime.UTC)
         data: dict[str, Any] = {}
         flags: list[str] = []
 
@@ -75,7 +75,7 @@ class OHLCVCollector(BaseCollector):
                 rows = self._rest.get_kline(self.symbol, interval, limit=limit)
                 for row in rows:
                     candle = _parse_candle(row)
-                    ts = datetime.datetime.utcfromtimestamp(candle["ts_ms"] / 1000)
+                    ts = datetime.datetime.fromtimestamp(candle["ts_ms"] / 1000, datetime.UTC)
                     results.append(
                         CollectorResult(
                             symbol=self.symbol,
@@ -104,7 +104,7 @@ class BookCollector(BaseCollector):
         self._depth = depth
 
     def collect(self) -> CollectorResult:
-        now = datetime.datetime.utcnow()
+        now = datetime.datetime.now(datetime.UTC)
         flags: list[str] = []
 
         try:

@@ -138,7 +138,7 @@ class TestBuildSnapshot:
         assert snap.session == "london_ny_overlap"
 
     def test_data_quality_flags_json(self):
-        ohlcv = CollectorResult("XRPUSDT", datetime.datetime.utcnow(), {}, ["stale_data"])
+        ohlcv = CollectorResult("XRPUSDT", datetime.datetime.now(datetime.UTC), {}, ["stale_data"])
         snap = build_snapshot("XRPUSDT", "5m", ohlcv=ohlcv, quality_flags=["clock_drift"])
         flags = json.loads(snap.data_quality_flags)
         assert "stale_data" in flags

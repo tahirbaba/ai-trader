@@ -42,7 +42,7 @@ def record_startup_config(session: Session, repo_root: Path | None = None) -> No
 
     git_sha = _git_head_sha(repo_root)
     repo = ConfigAuditRepository(session)
-    now = datetime.datetime.utcnow()
+    now = datetime.datetime.now(datetime.UTC)
 
     for rel_path in _CONFIG_FILES:
         full_path = repo_root / rel_path

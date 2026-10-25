@@ -109,7 +109,7 @@ class TestMigrationPostgres:
 class TestMarketSnapshotRepository:
     def test_add_and_get(self, session: Session) -> None:
         repo = MarketSnapshotRepository(session)
-        ts = datetime.datetime.utcnow()
+        ts = datetime.datetime.now(datetime.UTC)
         snap = MarketSnapshot(
             ts=ts,
             symbol="XRP/USDT:USDT",
@@ -148,7 +148,7 @@ class TestDecisionRepository:
     def test_add_no_trade(self, session: Session) -> None:
         repo = DecisionRepository(session)
         d = Decision(
-            ts=datetime.datetime.utcnow(),
+            ts=datetime.datetime.now(datetime.UTC),
             action="NO_TRADE",
             symbol="XRP/USDT:USDT",
             confidence=0.0,
@@ -183,8 +183,8 @@ class TestNewsItemRepository:
     def test_add_and_get_by_dedupe_hash(self, session: Session) -> None:
         repo = NewsItemRepository(session)
         item = NewsItem(
-            ts_published=datetime.datetime.utcnow(),
-            ts_ingested=datetime.datetime.utcnow(),
+            ts_published=datetime.datetime.now(datetime.UTC),
+            ts_ingested=datetime.datetime.now(datetime.UTC),
             source="cryptopanic",
             title="BTC pumps",
             dedupe_hash="abc123",
@@ -202,7 +202,7 @@ class TestRiskEventRepository:
         repo = RiskEventRepository(session)
         repo.add(
             RiskEvent(
-                ts=datetime.datetime.utcnow(),
+                ts=datetime.datetime.now(datetime.UTC),
                 type="cap_breach_attempt",
                 details="loss exceeds limit",
             )
@@ -218,7 +218,7 @@ class TestOrderRepository:
         repo = OrderRepository(session)
         repo.add(
             Order(
-                ts=datetime.datetime.utcnow(),
+                ts=datetime.datetime.now(datetime.UTC),
                 client_order_id="CL001",
                 mode="paper",
                 type="limit",
@@ -252,7 +252,7 @@ class TestConfigAuditRepository:
         repo = ConfigAuditRepository(session)
         repo.add(
             ConfigAudit(
-                ts=datetime.datetime.utcnow(),
+                ts=datetime.datetime.now(datetime.UTC),
                 file="config/risk.yaml",
                 git_sha="deadbeef",
                 diff="{}",

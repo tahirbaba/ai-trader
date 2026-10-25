@@ -207,7 +207,7 @@ class TestLlmClientBudget:
             import datetime
 
             row = LlmCall(
-                ts=datetime.datetime.utcnow(),
+                ts=datetime.datetime.now(datetime.UTC),
                 purpose="previous",
                 model="claude-sonnet",
                 input_tokens=1000,
@@ -244,7 +244,7 @@ class TestLlmClientBudget:
             import datetime
 
             row = LlmCall(
-                ts=datetime.datetime.utcnow(),
+                ts=datetime.datetime.now(datetime.UTC),
                 purpose="prev",
                 model="claude",
                 input_tokens=100,

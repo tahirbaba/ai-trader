@@ -41,7 +41,7 @@ class SentimentCollector:
 
     def collect(self) -> CollectorResult:
         """Return Fear & Greed data (or disabled/error result)."""
-        now = datetime.datetime.utcnow()
+        now = datetime.datetime.now(datetime.UTC)
 
         if not self._enabled:
             return CollectorResult(
@@ -60,7 +60,7 @@ class SentimentCollector:
             value = int(record["value"])
             label: str = record["value_classification"]
             ts_unix = int(record["timestamp"])
-            ts = datetime.datetime.utcfromtimestamp(ts_unix)
+            ts = datetime.datetime.fromtimestamp(ts_unix, datetime.UTC)
 
             return CollectorResult(
                 symbol="SENTIMENT",

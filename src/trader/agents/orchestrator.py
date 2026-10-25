@@ -626,7 +626,7 @@ class TradeCycleOrchestrator:
 
             session = self._session_factory()
             try:
-                today_start = datetime.datetime.utcnow().replace(
+                today_start = datetime.datetime.now(datetime.UTC).replace(
                     hour=0, minute=0, second=0, microsecond=0
                 )
                 repo = LlmCallRepository(session)
@@ -680,7 +680,7 @@ class TradeCycleOrchestrator:
             try:
                 decision = result.decision
                 row = Decision(
-                    ts=datetime.datetime.utcnow(),
+                    ts=datetime.datetime.now(datetime.UTC),
                     action=result.action,
                     symbol=result.symbol,
                     side=(
