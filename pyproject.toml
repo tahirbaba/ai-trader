@@ -18,6 +18,8 @@ dependencies = [
     # Phase 2B: cross-asset + news
     "yfinance>=0.2",
     "feedparser>=6.0",
+    # Phase 3: feature engineering
+    "numpy>=1.26",
 ]
 
 [project.optional-dependencies]

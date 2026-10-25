@@ -7,6 +7,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
+- Phase 3: `FeaturePack` — frozen Pydantic model holding all computed features for a single bar.
+- Phase 3: `indicators.py` — pure-numpy EMA, SMA, RSI (Wilder's), MACD, ATR (Wilder's), Bollinger Bands, VWAP, swing highs/lows, BB%.
+- Phase 3: `alignment.py` — `trend_direction`, `mtf_alignment`, `htf_aligned` for multi-timeframe trend logic.
+- Phase 3: `derivatives_features.py` — `funding_zscore`, `oi_price_divergence`, `basis_zscore`.
+- Phase 3: `orderflow_features.py` — `cvd_divergence`, `spread_percentile`.
+- Phase 3: `regime.py` — `classify_regime` with five regimes in strict priority order (news_shock > high_vol_breakout > trend_up > trend_down > range).
+- Phase 3: `confluence.py` — six-group independent `confluence_score` (0–6) and `confluence_score_both`.
+- Phase 3: `builder.py` — `build_feature_pack()` deterministic assembler; same inputs always produce the same `features_hash`.
+- Phase 3: `snapshot_writer.py` — `save_feature_pack()` bridges `FeaturePack` → `MarketSnapshot` ORM row (no auto-commit).
+- Phase 3: 87 unit tests covering all new modules including golden-file determinism test with hardcoded SHA-256 hash.
+- ADR-008: Feature engineering pipeline design decisions (seven sub-decisions).
+- `numpy>=1.26` added to project dependencies.
+- `docs/specs/phase3-features.md` — ten acceptance criteria.
+
 - Phase 2B: `CrossAssetCollector` — DXY, SPX, Gold via yfinance; BTC dominance and ETH/BTC via CoinGecko free API; stale-mask for traditional-market assets outside trading hours.
 - Phase 2B: `InputSanitizer` — standalone `sanitize_text`, `detect_injection`, `sanitize_news_item` functions for stripping HTML, collapsing whitespace, truncation, and injection-phrase detection.
 - Phase 2B: `NewsCollector` — polls CryptoPanic/CoinDesk free RSS feeds via feedparser; SHA-256 in-memory deduplication; per-item injection flagging.
