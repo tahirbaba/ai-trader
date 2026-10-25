@@ -57,6 +57,7 @@ TAKER = 0.00055
 # Shared fixture builders
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def _make_risk_settings(**overrides) -> RiskSettings:
     base = dict(
         max_margin_per_trade_usd=MAX_MARGIN_USD,
@@ -108,9 +109,14 @@ def _make_gate(**risk_overrides) -> RiskGate:
 
 def _make_account(**overrides) -> AccountState:
     base = dict(
-        equity_usd=100.0, daily_loss_usd=0.0, weekly_loss_usd=0.0,
-        consecutive_losses=0, last_loss_ts=None, open_positions=0,
-        trades_today=0, llm_cost_today_usd=0.0,
+        equity_usd=100.0,
+        daily_loss_usd=0.0,
+        weekly_loss_usd=0.0,
+        consecutive_losses=0,
+        last_loss_ts=None,
+        open_positions=0,
+        trades_today=0,
+        llm_cost_today_usd=0.0,
     )
     base.update(overrides)
     return AccountState(**base)
@@ -118,11 +124,19 @@ def _make_account(**overrides) -> AccountState:
 
 def _make_market(entry: float = 0.5, **overrides) -> MarketState:
     base = dict(
-        symbol="XRP/USDT:USDT", live_price=entry, snapshot_price=entry,
-        atr_14=None, spread_pct=0.001, funding_rate=0.0, next_funding_ts=None,
-        data_age_seconds=5.0, clock_drift_ms=10.0,
-        is_macro_blackout=False, macro_blackout_name="",
-        is_exchange_blackout=False, exchange_blackout_reason="",
+        symbol="XRP/USDT:USDT",
+        live_price=entry,
+        snapshot_price=entry,
+        atr_14=None,
+        spread_pct=0.001,
+        funding_rate=0.0,
+        next_funding_ts=None,
+        data_age_seconds=5.0,
+        clock_drift_ms=10.0,
+        is_macro_blackout=False,
+        macro_blackout_name="",
+        is_exchange_blackout=False,
+        exchange_blackout_reason="",
     )
     base.update(overrides)
     return MarketState(**base)
@@ -130,9 +144,15 @@ def _make_market(entry: float = 0.5, **overrides) -> MarketState:
 
 def _make_decision(**overrides) -> DecisionInput:
     base = dict(
-        action="LONG", symbol="XRP/USDT:USDT", side="long",
-        entry_price=0.5, stop_loss=0.45, take_profit=0.65,
-        confidence=0.85, confluence_score=4, entry_type="limit",
+        action="LONG",
+        symbol="XRP/USDT:USDT",
+        side="long",
+        entry_price=0.5,
+        stop_loss=0.45,
+        take_profit=0.65,
+        confidence=0.85,
+        confluence_score=4,
+        entry_type="limit",
     )
     base.update(overrides)
     return DecisionInput(**base)
@@ -155,6 +175,7 @@ def _lesson(blocked=False, penalty=0.0) -> LessonCheckInput:
 # This means a long with stop=-0.10 (an impossible/invalid price) can be approved.
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def test_negative_stop_loss_long_must_be_rejected():
     """Negative stop_loss is now rejected by DecisionInput Pydantic validation (ge=0).
 
@@ -173,7 +194,9 @@ def test_negative_stop_loss_short_must_be_rejected():
     from pydantic import ValidationError
 
     with pytest.raises(ValidationError):
-        _make_decision(action="SHORT", side="short", entry_price=0.5, stop_loss=-0.10, take_profit=0.40)
+        _make_decision(
+            action="SHORT", side="short", entry_price=0.5, stop_loss=-0.10, take_profit=0.40
+        )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -186,6 +209,7 @@ def test_negative_stop_loss_short_must_be_rejected():
 # effectively boosting a borderline-confidence decision to pass check 19.
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def test_negative_confidence_penalty_must_be_rejected_by_model():
     """MEDIUM: LessonCheckInput must reject confidence_penalty < 0.
 
@@ -193,6 +217,7 @@ def test_negative_confidence_penalty_must_be_rejected_by_model():
     The model has no ge=0 validator on confidence_penalty.
     """
     import pydantic
+
     with pytest.raises((pydantic.ValidationError, ValueError)):
         LessonCheckInput(blocked=False, confidence_penalty=-0.5)
 
@@ -228,6 +253,7 @@ def test_negative_confidence_penalty_does_not_approve_low_confidence():
 # However, the model should still validate the range.
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def test_confidence_penalty_exceeding_one_causes_rejection():
     """penalty > 1.0 is now rejected by LessonCheckInput Pydantic validation (le=1.0).
 
@@ -246,9 +272,18 @@ def test_confidence_penalty_exceeding_one_causes_rejection():
 # decision.action.upper(). Check that case variants can't slip through.
 # ─────────────────────────────────────────────────────────────────────────────
 
-@pytest.mark.parametrize("action_str", [
-    "NO_TRADE", "no_trade", "No_Trade", "HOLD", "hold", "Hold",
-])
+
+@pytest.mark.parametrize(
+    "action_str",
+    [
+        "NO_TRADE",
+        "no_trade",
+        "No_Trade",
+        "HOLD",
+        "hold",
+        "Hold",
+    ],
+)
 def test_no_trade_variants_never_approved(action_str: str):
     """NO_TRADE and HOLD in any case must never return approved=True."""
     gate = _make_gate()
@@ -258,15 +293,16 @@ def test_no_trade_variants_never_approved(action_str: str):
         account=_make_account(),
         market=_make_market(),
     )
-    assert verdict.approved is False, (
-        f"NO_TRADE action variant '{action_str}' returned approved=True"
-    )
+    assert (
+        verdict.approved is False
+    ), f"NO_TRADE action variant '{action_str}' returned approved=True"
     assert "NO_TRADE" in verdict.rules_failed
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # BUG 5: LessonFilter blocked=True must never be approved
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def test_lesson_filter_blocked_always_rejects():
     """CRITICAL: blocked=True in LessonCheckInput must never produce approved=True."""
@@ -284,6 +320,7 @@ def test_lesson_filter_blocked_always_rejects():
 # ─────────────────────────────────────────────────────────────────────────────
 # BUG 6: Kill switch bypass — kill_switch_on=True must always reject
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def test_kill_switch_always_rejects_regardless_of_input():
     """CRITICAL: kill_switch=True must reject even perfect inputs."""
@@ -305,6 +342,7 @@ def test_kill_switch_always_rejects_regardless_of_input():
 # ─────────────────────────────────────────────────────────────────────────────
 # BUG 7: LIVE mode without live_approval.yaml must always reject
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def test_live_mode_without_approval_always_rejects(tmp_path):
     """CRITICAL: LIVE mode without live_approval.yaml must reject."""
@@ -333,10 +371,18 @@ def test_live_mode_without_approval_always_rejects(tmp_path):
 # BUG 8: Symbol not in allowed_symbols must always reject
 # ─────────────────────────────────────────────────────────────────────────────
 
-@pytest.mark.parametrize("symbol", [
-    "BTC/USDT:USDT", "ETH/USDT:USDT", "", " ", "XRP/USDT:USDT ",
-    "xrp/usdt:usdt",  # case-sensitive check
-])
+
+@pytest.mark.parametrize(
+    "symbol",
+    [
+        "BTC/USDT:USDT",
+        "ETH/USDT:USDT",
+        "",
+        " ",
+        "XRP/USDT:USDT ",
+        "xrp/usdt:usdt",  # case-sensitive check
+    ],
+)
 def test_disallowed_symbol_always_rejects(symbol: str):
     """CRITICAL: any symbol not in allowed_symbols must be rejected."""
     gate = _make_gate()
@@ -354,6 +400,7 @@ def test_disallowed_symbol_always_rejects(symbol: str):
 # BUG 9: Daily loss limit — boundary conditions
 # The check uses >= so daily_loss_usd == daily_loss_limit_usd should reject
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def test_daily_loss_at_limit_rejects():
     """CRITICAL: daily_loss_usd == daily_loss_limit_usd must reject."""
@@ -390,6 +437,7 @@ def test_weekly_loss_at_limit_rejects():
 # (price=0 meaning "unknown") to produce no ENTRY_DRIFT rejection.
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def test_snapshot_price_zero_no_entry_drift_rejection():
     """snapshot_price=0 is now rejected by MarketState Pydantic validation (gt=0).
 
@@ -408,6 +456,7 @@ def test_snapshot_price_zero_no_entry_drift_rejection():
 # gate.py line 246: if market.next_funding_ts is not None and market.funding_rate is not None
 # Both must be non-None for the check to run. If next_funding_ts is None, skip.
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def test_funding_window_none_ts_skipped():
     """LOW: next_funding_ts=None skips funding window check (no crash)."""
@@ -451,6 +500,7 @@ def test_funding_rate_zero_not_against_any_side():
 # BUG 12: layer2_check.py independence — it must NOT import from gate.py
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def test_layer2_check_does_not_import_gate():
     """CRITICAL: layer2_check.py must not import from gate.py.
 
@@ -469,15 +519,14 @@ def test_layer2_check_does_not_import_gate():
     source_file = Path(l2_mod.__file__)
     content = source_file.read_text()
 
-    assert "gate" not in content.lower() or "Never import from gate.py" in content, (
-        "layer2_check.py appears to import from gate.py — independence broken"
-    )
+    assert (
+        "gate" not in content.lower() or "Never import from gate.py" in content
+    ), "layer2_check.py appears to import from gate.py — independence broken"
     # More precisely: check no 'from trader.risk.gate' or 'import gate' lines
     import re
+
     gate_imports = re.findall(r"^(?:from|import).*gate", content, re.MULTILINE)
-    assert gate_imports == [], (
-        f"layer2_check.py has gate imports: {gate_imports}"
-    )
+    assert gate_imports == [], f"layer2_check.py has gate imports: {gate_imports}"
 
 
 def test_layer2_check_does_not_import_sizing():
@@ -487,19 +536,22 @@ def test_layer2_check_does_not_import_sizing():
     If it imported sizing.py, both modules could be mocked together.
     """
     import trader.execution.layer2_check as l2_mod
+
     source_file = Path(l2_mod.__file__)
     content = source_file.read_text()
 
     import re
+
     trader_imports = re.findall(r"^(?:from|import)\s+trader", content, re.MULTILINE)
-    assert trader_imports == [], (
-        f"layer2_check.py has trader imports (breaks independence): {trader_imports}"
-    )
+    assert (
+        trader_imports == []
+    ), f"layer2_check.py has trader imports (breaks independence): {trader_imports}"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # BUG 13: Sizing loss formula — verify fees are included and loss <= max_loss_usd
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 @given(
     entry=st.floats(min_value=0.01, max_value=1000.0),
@@ -512,6 +564,7 @@ def test_compute_size_loss_never_exceeds_cap(
 ) -> None:
     """Property: compute_size loss_at_stop always <= max_loss_usd including fees+slippage."""
     import math as _math
+
     if not (_math.isfinite(entry) and _math.isfinite(stop_pct)):
         return
     stop = entry * (1 - stop_pct)
@@ -519,19 +572,26 @@ def test_compute_size_loss_never_exceeds_cap(
         return
     try:
         qty, loss, margin = compute_size(
-            side="long", entry=entry, stop=stop, take_profit=entry * 1.5,
-            lot_size=lot_size, min_qty=lot_size,
-            maker_fee_rate=0.0002, taker_fee_rate=TAKER,
-            max_margin_usd=MAX_MARGIN_USD, max_loss_usd=MAX_LOSS_USD,
-            max_leverage=float(MAX_LEVERAGE), slippage_buffer_pct=SLIP,
+            side="long",
+            entry=entry,
+            stop=stop,
+            take_profit=entry * 1.5,
+            lot_size=lot_size,
+            min_qty=lot_size,
+            maker_fee_rate=0.0002,
+            taker_fee_rate=TAKER,
+            max_margin_usd=MAX_MARGIN_USD,
+            max_loss_usd=MAX_LOSS_USD,
+            max_leverage=float(MAX_LEVERAGE),
+            slippage_buffer_pct=SLIP,
         )
         assert loss <= MAX_LOSS_USD + 1e-9, (
             f"loss {loss} exceeds MAX_LOSS_USD {MAX_LOSS_USD} "
             f"entry={entry} stop={stop} qty={qty}"
         )
-        assert margin <= MAX_MARGIN_USD + 1e-9, (
-            f"margin {margin} exceeds MAX_MARGIN_USD {MAX_MARGIN_USD}"
-        )
+        assert (
+            margin <= MAX_MARGIN_USD + 1e-9
+        ), f"margin {margin} exceeds MAX_MARGIN_USD {MAX_MARGIN_USD}"
     except SizingError:
         pass  # legitimate rejection
 
@@ -547,6 +607,7 @@ def test_gate_approved_order_loss_never_exceeds_cap(
 ) -> None:
     """Property: any approved verdict has loss_at_stop_usd <= MAX_LOSS_USD."""
     import math as _math
+
     if not (_math.isfinite(entry) and _math.isfinite(stop_pct)):
         return
     stop = entry * (1 - stop_pct)
@@ -558,7 +619,9 @@ def test_gate_approved_order_loss_never_exceeds_cap(
     gate = _make_gate()
     verdict = gate.evaluate(
         decision=_make_decision(
-            entry_price=entry, stop_loss=stop, take_profit=tp,
+            entry_price=entry,
+            stop_loss=stop,
+            take_profit=tp,
         ),
         lesson_check=_lesson(),
         account=_make_account(),
@@ -568,19 +631,20 @@ def test_gate_approved_order_loss_never_exceeds_cap(
     )
     if verdict.approved:
         assert verdict.loss_at_stop_usd is not None
-        assert verdict.loss_at_stop_usd <= MAX_LOSS_USD + 1e-6, (
-            f"CRITICAL: approved loss {verdict.loss_at_stop_usd} > MAX_LOSS_USD {MAX_LOSS_USD}"
-        )
+        assert (
+            verdict.loss_at_stop_usd <= MAX_LOSS_USD + 1e-6
+        ), f"CRITICAL: approved loss {verdict.loss_at_stop_usd} > MAX_LOSS_USD {MAX_LOSS_USD}"
         assert verdict.adjusted_size is not None
         margin = verdict.adjusted_size * entry / MAX_LEVERAGE
-        assert margin <= MAX_MARGIN_USD + 1e-6, (
-            f"CRITICAL: approved margin {margin} > MAX_MARGIN_USD {MAX_MARGIN_USD}"
-        )
+        assert (
+            margin <= MAX_MARGIN_USD + 1e-6
+        ), f"CRITICAL: approved margin {margin} > MAX_MARGIN_USD {MAX_MARGIN_USD}"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # BUG 14: layer2_check must also reject any approved order that exceeds caps
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 @given(
     entry=st.floats(min_value=0.01, max_value=1000.0),
@@ -588,11 +652,10 @@ def test_gate_approved_order_loss_never_exceeds_cap(
     lot_size=st.just(1.0),
 )
 @settings(max_examples=300, deadline=None, suppress_health_check=[HealthCheck.too_slow])
-def test_layer2_check_catches_margin_breach(
-    entry: float, stop_pct: float, lot_size: float
-) -> None:
+def test_layer2_check_catches_margin_breach(entry: float, stop_pct: float, lot_size: float) -> None:
     """Property: layer2_cap_check raises CapBreachError when margin is over limit."""
     import math as _math
+
     if not (_math.isfinite(entry) and _math.isfinite(stop_pct)):
         return
     stop = entry * (1 - stop_pct)
@@ -600,11 +663,18 @@ def test_layer2_check_catches_margin_breach(
         return
     try:
         qty, loss, margin = compute_size(
-            side="long", entry=entry, stop=stop, take_profit=entry * 1.5,
-            lot_size=lot_size, min_qty=lot_size,
-            maker_fee_rate=0.0002, taker_fee_rate=TAKER,
-            max_margin_usd=MAX_MARGIN_USD, max_loss_usd=MAX_LOSS_USD,
-            max_leverage=float(MAX_LEVERAGE), slippage_buffer_pct=SLIP,
+            side="long",
+            entry=entry,
+            stop=stop,
+            take_profit=entry * 1.5,
+            lot_size=lot_size,
+            min_qty=lot_size,
+            maker_fee_rate=0.0002,
+            taker_fee_rate=TAKER,
+            max_margin_usd=MAX_MARGIN_USD,
+            max_loss_usd=MAX_LOSS_USD,
+            max_leverage=float(MAX_LEVERAGE),
+            slippage_buffer_pct=SLIP,
         )
     except SizingError:
         return
@@ -637,16 +707,16 @@ def test_layer2_check_catches_margin_breach(
 # BUG 15: Liquidation price always farther from entry than stop
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 @given(
     entry=st.floats(min_value=0.01, max_value=1000.0),
     stop_pct=st.floats(min_value=0.001, max_value=0.3),
 )
 @settings(max_examples=300, deadline=None, suppress_health_check=[HealthCheck.too_slow])
-def test_approved_liq_always_beyond_stop_buffer(
-    entry: float, stop_pct: float
-) -> None:
+def test_approved_liq_always_beyond_stop_buffer(entry: float, stop_pct: float) -> None:
     """Property: liq_distance >= liq_buffer_multiple * stop_distance for all approved orders."""
     import math as _math
+
     if not (_math.isfinite(entry) and _math.isfinite(stop_pct)):
         return
     stop = entry * (1 - stop_pct)
@@ -678,33 +748,33 @@ def test_approved_liq_always_beyond_stop_buffer(
 # ─────────────────────────────────────────────────────────────────────────────
 
 ALL_27_RULES = [
-    "KILL_SWITCH",          # 1
-    "LIVE_NOT_APPROVED",    # 2
-    "NO_TRADE",             # 3
-    "SYMBOL_NOT_ALLOWED",   # 4
+    "KILL_SWITCH",  # 1
+    "LIVE_NOT_APPROVED",  # 2
+    "NO_TRADE",  # 3
+    "SYMBOL_NOT_ALLOWED",  # 4
     "LESSON_FILTER_BLOCK",  # 5
-    "CLOCK_DRIFT",          # 6
-    "STALE_DATA",           # 7
-    "SPREAD_TOO_WIDE",      # 8
-    "MACRO_BLACKOUT",       # 9
-    "EXCHANGE_BLACKOUT",    # 10
-    "EQUITY_FLOOR",         # 11
-    "DAILY_LOSS_LIMIT",     # 12
-    "WEEKLY_LOSS_LIMIT",    # 13
-    "CONSECUTIVE_LOSSES",   # 14
-    "COOLDOWN",             # 15
-    "MAX_OPEN_POSITIONS",   # 16
-    "MAX_TRADES_TODAY",     # 17
-    "LLM_BUDGET_EXHAUSTED", # 18
-    "LOW_CONFIDENCE",       # 19
-    "LOW_CONFLUENCE",       # 20
-    "MISSING_STOP_LOSS",    # 21
-    "STOP_DISTANCE_ATR",    # 22
-    "FUNDING_WINDOW",       # 23
-    "SIZING_FAILED",        # 24
-    "LIQ_TOO_CLOSE",        # 25
-    "RR_TOO_LOW",           # 26
-    "ENTRY_DRIFT",          # 27
+    "CLOCK_DRIFT",  # 6
+    "STALE_DATA",  # 7
+    "SPREAD_TOO_WIDE",  # 8
+    "MACRO_BLACKOUT",  # 9
+    "EXCHANGE_BLACKOUT",  # 10
+    "EQUITY_FLOOR",  # 11
+    "DAILY_LOSS_LIMIT",  # 12
+    "WEEKLY_LOSS_LIMIT",  # 13
+    "CONSECUTIVE_LOSSES",  # 14
+    "COOLDOWN",  # 15
+    "MAX_OPEN_POSITIONS",  # 16
+    "MAX_TRADES_TODAY",  # 17
+    "LLM_BUDGET_EXHAUSTED",  # 18
+    "LOW_CONFIDENCE",  # 19
+    "LOW_CONFLUENCE",  # 20
+    "MISSING_STOP_LOSS",  # 21
+    "STOP_DISTANCE_ATR",  # 22
+    "FUNDING_WINDOW",  # 23
+    "SIZING_FAILED",  # 24
+    "LIQ_TOO_CLOSE",  # 25
+    "RR_TOO_LOW",  # 26
+    "ENTRY_DRIFT",  # 27
 ]
 
 
@@ -712,15 +782,16 @@ ALL_27_RULES = [
 def test_all_27_rules_are_referenced_in_gate(rule: str) -> None:
     """Structural: all 27 rule names must appear as string literals in gate.py."""
     gate_src = Path("/Users/apple/ai-trader/src/trader/risk/gate.py").read_text()
-    assert f'"{rule}"' in gate_src or f"'{rule}'" in gate_src, (
-        f"Rule '{rule}' not found as a string literal in gate.py"
-    )
+    assert (
+        f'"{rule}"' in gate_src or f"'{rule}'" in gate_src
+    ), f"Rule '{rule}' not found as a string literal in gate.py"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # BUG 17: Float precision edge cases in sizing math
 # Very large prices * very small stop distance can produce float precision issues
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def test_sizing_very_large_entry_small_stop_distance():
     """LOW: Large price with tiny stop distance should not overflow or underflow."""
@@ -729,11 +800,18 @@ def test_sizing_very_large_entry_small_stop_distance():
     # With lot_size=1.0, floor(0.94) = 0 < min_qty=1.0 → SizingError expected
     with pytest.raises(SizingError):
         compute_size(
-            side="long", entry=10000.0, stop=9999.0, take_profit=10100.0,
-            lot_size=1.0, min_qty=1.0,
-            maker_fee_rate=0.0002, taker_fee_rate=TAKER,
-            max_margin_usd=MAX_MARGIN_USD, max_loss_usd=MAX_LOSS_USD,
-            max_leverage=float(MAX_LEVERAGE), slippage_buffer_pct=SLIP,
+            side="long",
+            entry=10000.0,
+            stop=9999.0,
+            take_profit=10100.0,
+            lot_size=1.0,
+            min_qty=1.0,
+            maker_fee_rate=0.0002,
+            taker_fee_rate=TAKER,
+            max_margin_usd=MAX_MARGIN_USD,
+            max_loss_usd=MAX_LOSS_USD,
+            max_leverage=float(MAX_LEVERAGE),
+            slippage_buffer_pct=SLIP,
         )
 
 
@@ -741,11 +819,18 @@ def test_sizing_very_small_entry_price():
     """LOW: Very small entry price (near 0) must not divide by zero or overflow qty."""
     try:
         qty, loss, margin = compute_size(
-            side="long", entry=0.0001, stop=0.00009, take_profit=0.0002,
-            lot_size=1.0, min_qty=1.0,
-            maker_fee_rate=0.0002, taker_fee_rate=TAKER,
-            max_margin_usd=MAX_MARGIN_USD, max_loss_usd=MAX_LOSS_USD,
-            max_leverage=float(MAX_LEVERAGE), slippage_buffer_pct=SLIP,
+            side="long",
+            entry=0.0001,
+            stop=0.00009,
+            take_profit=0.0002,
+            lot_size=1.0,
+            min_qty=1.0,
+            maker_fee_rate=0.0002,
+            taker_fee_rate=TAKER,
+            max_margin_usd=MAX_MARGIN_USD,
+            max_loss_usd=MAX_LOSS_USD,
+            max_leverage=float(MAX_LEVERAGE),
+            slippage_buffer_pct=SLIP,
         )
         assert loss <= MAX_LOSS_USD + 1e-9
         assert margin <= MAX_MARGIN_USD + 1e-9
@@ -757,11 +842,18 @@ def test_sizing_entry_zero_raises():
     """LOW: entry=0 must raise SizingError, not produce infinite qty."""
     with pytest.raises(SizingError):
         compute_size(
-            side="long", entry=0.0, stop=-0.01, take_profit=0.1,
-            lot_size=1.0, min_qty=1.0,
-            maker_fee_rate=0.0002, taker_fee_rate=TAKER,
-            max_margin_usd=MAX_MARGIN_USD, max_loss_usd=MAX_LOSS_USD,
-            max_leverage=float(MAX_LEVERAGE), slippage_buffer_pct=SLIP,
+            side="long",
+            entry=0.0,
+            stop=-0.01,
+            take_profit=0.1,
+            lot_size=1.0,
+            min_qty=1.0,
+            maker_fee_rate=0.0002,
+            taker_fee_rate=TAKER,
+            max_margin_usd=MAX_MARGIN_USD,
+            max_loss_usd=MAX_LOSS_USD,
+            max_leverage=float(MAX_LEVERAGE),
+            slippage_buffer_pct=SLIP,
         )
 
 
@@ -770,25 +862,38 @@ def test_sizing_entry_zero_raises():
 # Models use float for prices — NaN and Inf must be validated
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def test_decision_nan_entry_price_rejected_by_pydantic():
     """CRITICAL: NaN entry_price in DecisionInput must raise Pydantic ValidationError."""
     import pydantic
+
     with pytest.raises(pydantic.ValidationError):
         DecisionInput(
-            action="LONG", symbol="XRP/USDT:USDT", side="long",
-            entry_price=float("nan"), stop_loss=0.45, take_profit=0.65,
-            confidence=0.85, confluence_score=4,
+            action="LONG",
+            symbol="XRP/USDT:USDT",
+            side="long",
+            entry_price=float("nan"),
+            stop_loss=0.45,
+            take_profit=0.65,
+            confidence=0.85,
+            confluence_score=4,
         )
 
 
 def test_decision_inf_entry_price_rejected_by_pydantic():
     """CRITICAL: Inf entry_price in DecisionInput must raise Pydantic ValidationError."""
     import pydantic
+
     with pytest.raises(pydantic.ValidationError):
         DecisionInput(
-            action="LONG", symbol="XRP/USDT:USDT", side="long",
-            entry_price=float("inf"), stop_loss=0.45, take_profit=0.65,
-            confidence=0.85, confluence_score=4,
+            action="LONG",
+            symbol="XRP/USDT:USDT",
+            side="long",
+            entry_price=float("inf"),
+            stop_loss=0.45,
+            take_profit=0.65,
+            confidence=0.85,
+            confluence_score=4,
         )
 
 
@@ -797,19 +902,27 @@ def test_decision_inf_entry_price_rejected_by_pydantic():
 # margin_used = qty * entry / max_leverage  (NOT qty * entry * max_leverage)
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def test_margin_uses_division_not_multiplication():
     """Verify margin formula: qty * entry / leverage (not * leverage)."""
     qty, loss, margin = compute_size(
-        side="long", entry=0.5, stop=0.45, take_profit=0.65,
-        lot_size=1.0, min_qty=1.0,
-        maker_fee_rate=0.0002, taker_fee_rate=TAKER,
-        max_margin_usd=MAX_MARGIN_USD, max_loss_usd=MAX_LOSS_USD,
-        max_leverage=float(MAX_LEVERAGE), slippage_buffer_pct=SLIP,
+        side="long",
+        entry=0.5,
+        stop=0.45,
+        take_profit=0.65,
+        lot_size=1.0,
+        min_qty=1.0,
+        maker_fee_rate=0.0002,
+        taker_fee_rate=TAKER,
+        max_margin_usd=MAX_MARGIN_USD,
+        max_loss_usd=MAX_LOSS_USD,
+        max_leverage=float(MAX_LEVERAGE),
+        slippage_buffer_pct=SLIP,
     )
     expected_margin = qty * 0.5 / MAX_LEVERAGE
-    assert abs(margin - expected_margin) < 1e-9, (
-        f"Margin formula wrong: got {margin}, expected {expected_margin}"
-    )
+    assert (
+        abs(margin - expected_margin) < 1e-9
+    ), f"Margin formula wrong: got {margin}, expected {expected_margin}"
     # Also confirm this is LESS than entry * qty (no leverage multiplication)
     assert margin < qty * 0.5
 
@@ -819,6 +932,7 @@ def test_margin_uses_division_not_multiplication():
 # ordering. The gate is fail-fast (returns immediately on first failure).
 # Check that kill_switch (check 1) fires before mode_check (check 2).
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def test_kill_switch_fires_before_mode_check(tmp_path):
     """Check ordering: kill_switch (1) fires before LIVE mode check (2)."""
@@ -860,6 +974,7 @@ def test_no_trade_fires_before_symbol_check():
 # These should ideally be validated at the model level, not just in gate logic.
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def test_decision_negative_entry_price_accepted_by_model():
     """MEDIUM: DecisionInput accepts negative entry_price (no model validation).
 
@@ -870,9 +985,14 @@ def test_decision_negative_entry_price_accepted_by_model():
     # This should ideally raise ValidationError but currently doesn't
     try:
         d = DecisionInput(
-            action="LONG", symbol="XRP/USDT:USDT", side="long",
-            entry_price=-1.0, stop_loss=-1.5, take_profit=0.65,
-            confidence=0.85, confluence_score=4,
+            action="LONG",
+            symbol="XRP/USDT:USDT",
+            side="long",
+            entry_price=-1.0,
+            stop_loss=-1.5,
+            take_profit=0.65,
+            confidence=0.85,
+            confluence_score=4,
         )
         # If accepted, the gate must still reject it
         gate = _make_gate()
@@ -882,9 +1002,7 @@ def test_decision_negative_entry_price_accepted_by_model():
             account=_make_account(),
             market=_make_market(),
         )
-        assert verdict.approved is False, (
-            "CRITICAL: negative entry_price was approved by the gate"
-        )
+        assert verdict.approved is False, "CRITICAL: negative entry_price was approved by the gate"
     except Exception:
         pass  # ValidationError is the desired behavior
 
@@ -898,15 +1016,22 @@ def test_decision_confidence_above_one_accepted_by_model():
     """
     try:
         d = DecisionInput(
-            action="LONG", symbol="XRP/USDT:USDT", side="long",
-            entry_price=0.5, stop_loss=0.45, take_profit=0.65,
-            confidence=1.5, confluence_score=4,
+            action="LONG",
+            symbol="XRP/USDT:USDT",
+            side="long",
+            entry_price=0.5,
+            stop_loss=0.45,
+            take_profit=0.65,
+            confidence=1.5,
+            confluence_score=4,
         )
         # If accepted, gate should still work (1.5 >= 0.7, so this DOES pass check 19)
         gate = _make_gate()
         gate.evaluate(
-            decision=d, lesson_check=_lesson(),
-            account=_make_account(), market=_make_market(),
+            decision=d,
+            lesson_check=_lesson(),
+            account=_make_account(),
+            market=_make_market(),
         )
         # Document: confidence=1.5 will pass through the gate if model doesn't validate
         # This is a medium risk — recommend adding le=1.0 validator
@@ -922,6 +1047,7 @@ def test_decision_confidence_above_one_accepted_by_model():
 # and the presence/direction of stop_loss via check 21.
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def test_require_exchange_side_sl_tp_is_stored_in_settings():
     """MEDIUM: require_exchange_side_sl_tp is in config but gate never reads it.
 
@@ -931,9 +1057,9 @@ def test_require_exchange_side_sl_tp_is_stored_in_settings():
     in the Executor, not the RiskGate.
     """
     risk = _make_risk_settings()
-    assert risk.require_exchange_side_sl_tp is True, (
-        "require_exchange_side_sl_tp should be True per config/risk.yaml"
-    )
+    assert (
+        risk.require_exchange_side_sl_tp is True
+    ), "require_exchange_side_sl_tp should be True per config/risk.yaml"
     # Verify the field exists in RiskSettings
     assert hasattr(risk, "require_exchange_side_sl_tp")
 
@@ -942,6 +1068,7 @@ def test_require_exchange_side_sl_tp_is_stored_in_settings():
 # BUG 23: Verify that a SizingError from compute_size becomes SIZING_FAILED
 # (not a 500 / unhandled exception that could propagate up)
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def test_sizing_error_becomes_rejected_not_exception():
     """CRITICAL: SizingError in compute_size must produce SIZING_FAILED, not crash."""
@@ -962,6 +1089,7 @@ def test_sizing_error_becomes_rejected_not_exception():
 # ─────────────────────────────────────────────────────────────────────────────
 # BUG 24: Verify consecutive_losses uses >= (not >) so limit=3 fires at 3
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def test_consecutive_losses_boundary():
     """CRITICAL: consecutive_losses >= max_consecutive_losses must reject at exact limit."""

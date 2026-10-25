@@ -107,7 +107,11 @@ class TestMacroNewsAnalyst:
         llm = make_llm(wrapped)
         analyst = MacroNewsAnalyst(llm=llm)
         report = analyst.analyze(
-            news_items=[], macro_events=[], cross_asset={}, is_macro_blackout=False, symbol="BTC/USDT"
+            news_items=[],
+            macro_events=[],
+            cross_asset={},
+            is_macro_blackout=False,
+            symbol="BTC/USDT",
         )
         assert report.bias == "bearish"
 
@@ -125,7 +129,11 @@ class TestMacroNewsAnalyst:
         llm.complete.assert_called_once()
         call_kwargs = llm.complete.call_args
         # Messages should contain sanitized text (wrapped in <title> tags)
-        messages = call_kwargs.kwargs.get("messages") or call_kwargs.args[2] if len(call_kwargs.args) > 2 else call_kwargs.kwargs.get("messages", [])
+        messages = (
+            call_kwargs.kwargs.get("messages") or call_kwargs.args[2]
+            if len(call_kwargs.args) > 2
+            else call_kwargs.kwargs.get("messages", [])
+        )
         content = str(messages)
         assert "<title>" in content  # sanitized
 
@@ -136,7 +144,11 @@ class TestMacroNewsAnalyst:
         llm.complete.side_effect = LlmError("API down")
         analyst = MacroNewsAnalyst(llm=llm)
         report = analyst.analyze(
-            news_items=[], macro_events=[], cross_asset={}, is_macro_blackout=False, symbol="ETH/USDT"
+            news_items=[],
+            macro_events=[],
+            cross_asset={},
+            is_macro_blackout=False,
+            symbol="ETH/USDT",
         )
         assert report.bias == "neutral"
         assert "analyst_error" in report.data_missing

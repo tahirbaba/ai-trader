@@ -47,9 +47,9 @@ class CycleResult(BaseModel):
     cycle_id: str
     symbol: str
     trigger: str
-    action: str              # final action (from BrainDecision or NO_TRADE)
-    approved: bool           # True if RiskGate approved
-    stopped_at: str          # which step stopped the cycle
+    action: str  # final action (from BrainDecision or NO_TRADE)
+    approved: bool  # True if RiskGate approved
+    stopped_at: str  # which step stopped the cycle
     decision: BrainDecision | None = None
     risk_verdict: RiskVerdict | None = None
     error: str | None = None
@@ -169,7 +169,9 @@ class TradeCycleOrchestrator:
         # Try to acquire lock without waiting (non-blocking)
         if lock.locked():
             cycle_id = str(uuid.uuid4())
-            logger.warning("TradeCycleOrchestrator: cycle for %s already running, rejecting", symbol)
+            logger.warning(
+                "TradeCycleOrchestrator: cycle for %s already running, rejecting", symbol
+            )
             return _no_trade_result(
                 cycle_id=cycle_id,
                 symbol=symbol,
@@ -193,7 +195,9 @@ class TradeCycleOrchestrator:
                 )
             except TimeoutError:
                 logger.error(
-                    "TradeCycleOrchestrator: cycle %s timed out after %.0fs", cycle_id, self._cycle_timeout
+                    "TradeCycleOrchestrator: cycle %s timed out after %.0fs",
+                    cycle_id,
+                    self._cycle_timeout,
                 )
                 result = _no_trade_result(
                     cycle_id=cycle_id,
@@ -330,7 +334,9 @@ class TradeCycleOrchestrator:
         # ------------------------------------------------------------------ #
         decision_dict = {
             "action": brain_decision.action,
-            "side": brain_decision.action.lower() if brain_decision.action in ("LONG", "SHORT") else "none",
+            "side": brain_decision.action.lower()
+            if brain_decision.action in ("LONG", "SHORT")
+            else "none",
             "symbol": symbol,
             "confidence": brain_decision.confidence,
         }
@@ -366,7 +372,9 @@ class TradeCycleOrchestrator:
         )
 
         final_action = brain_decision.action if risk_verdict.approved else "NO_TRADE"
-        stopped_at = "completed" if risk_verdict.approved else f"risk_gate:{risk_verdict.reject_reason}"
+        stopped_at = (
+            "completed" if risk_verdict.approved else f"risk_gate:{risk_verdict.reject_reason}"
+        )
 
         result = CycleResult(
             cycle_id=cycle_id,
@@ -503,7 +511,11 @@ class TradeCycleOrchestrator:
             )
         except TimeoutError:
             return _no_trade_result(
-                cycle_id, symbol, trigger, stopped_at="analyst_timeout", error="position_reviewer_timeout"
+                cycle_id,
+                symbol,
+                trigger,
+                stopped_at="analyst_timeout",
+                error="position_reviewer_timeout",
             )
         except Exception as exc:
             return _no_trade_result(
@@ -546,7 +558,9 @@ class TradeCycleOrchestrator:
         decision_input = DecisionInput(
             action=brain_decision.action,
             symbol=symbol,
-            side=brain_decision.action.lower() if brain_decision.action in ("LONG", "SHORT") else "none",
+            side=brain_decision.action.lower()
+            if brain_decision.action in ("LONG", "SHORT")
+            else "none",
             entry_price=_entry,
             stop_loss=_stop,
             take_profit=_tp,
@@ -645,9 +659,7 @@ class TradeCycleOrchestrator:
             logger.warning("TradeCycleOrchestrator: KSOR retrieval error: %s", exc)
             return []
 
-    def _store_cycle(
-        self, cycle_id: str, inputs: dict[str, Any], result: CycleResult
-    ) -> None:
+    def _store_cycle(self, cycle_id: str, inputs: dict[str, Any], result: CycleResult) -> None:
         """Store cycle inputs and result for replay."""
         self._cycle_store[cycle_id] = {
             "inputs": inputs,
@@ -686,9 +698,7 @@ class TradeCycleOrchestrator:
                         .get("confluence_score", 0)
                     ),
                     thesis=decision.thesis if decision else result.stopped_at,
-                    lessons_considered=json.dumps(
-                        decision.lessons_considered if decision else []
-                    ),
+                    lessons_considered=json.dumps(decision.lessons_considered if decision else []),
                     prompt_hash=cycle_id[:16],
                     parse_ok=decision is not None,
                 )

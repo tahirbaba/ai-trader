@@ -37,6 +37,7 @@ class KsorEntry(BaseModel):
             except (TypeError, ValueError) as exc:
                 raise ValueError(str(exc)) from exc
         return v
+
     action: str = ""
     evidence_trades: list[str] = Field(default_factory=list)
     win_stats: dict[str, Any] = Field(default_factory=dict)

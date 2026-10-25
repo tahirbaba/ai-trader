@@ -28,6 +28,7 @@ from trader.risk.models import (
 # Helpers: build valid base objects
 # ------------------------------------------------------------------
 
+
 def _make_settings(live_approval_exists: bool = False) -> Settings:
     """Build a minimal Settings object with sensible risk defaults."""
     risk = RiskSettings(
@@ -588,8 +589,7 @@ def test_short_stop_below_entry_rejects():
     gate = _make_gate()
     verdict = gate.evaluate(
         decision=_make_decision(
-            action="SHORT", side="short",
-            entry_price=0.5, stop_loss=0.45, take_profit=0.40
+            action="SHORT", side="short", entry_price=0.5, stop_loss=0.45, take_profit=0.40
         ),
         lesson_check=_make_lesson_check(),
         account=_make_account(),
@@ -738,7 +738,9 @@ def test_sizing_failed_rejects():
     # But with min_qty=10000 and lot_size=10000, floor(raw_qty/10000)*10000 < 10000 → SizingError
     verdict = gate.evaluate(
         decision=_make_decision(
-            entry_price=0.5, stop_loss=0.499, take_profit=0.60,
+            entry_price=0.5,
+            stop_loss=0.499,
+            take_profit=0.60,
             symbol="XRP/USDT:USDT",
         ),
         lesson_check=_make_lesson_check(),
@@ -768,6 +770,7 @@ def test_liq_too_close_rejects():
     # With max_leverage=3, margin per lot ≈ entry/leverage
     # We can force liq too close by overriding liq_buffer_multiple via a custom settings
     from trader.config.settings import AppSettings, ModelNames, RiskSettings, Settings
+
     risk = RiskSettings(
         max_margin_per_trade_usd=2.0,
         max_loss_per_trade_usd=1.0,

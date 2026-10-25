@@ -20,8 +20,8 @@ logger = logging.getLogger(__name__)
 # Pricing constants (USD per million tokens) — Claude Sonnet 4.6 defaults
 # ---------------------------------------------------------------------------
 
-_INPUT_COST_PER_M = 3.0          # $3/M input tokens
-_OUTPUT_COST_PER_M = 15.0        # $15/M output tokens
+_INPUT_COST_PER_M = 3.0  # $3/M input tokens
+_OUTPUT_COST_PER_M = 15.0  # $15/M output tokens
 _CACHED_INPUT_COST_PER_M = 0.30  # $0.30/M cached input tokens
 
 

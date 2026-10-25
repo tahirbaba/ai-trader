@@ -138,7 +138,9 @@ class LessonWriter:
         # Find the git repo root (walk up from ksor_root)
         repo_root = self._find_git_root(self._ksor_root)
         if repo_root is None:
-            logger.warning("LessonWriter: no git repo found above %s; skipping commit", self._ksor_root)
+            logger.warning(
+                "LessonWriter: no git repo found above %s; skipping commit", self._ksor_root
+            )
             return
 
         try:

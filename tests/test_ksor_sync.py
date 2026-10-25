@@ -21,7 +21,9 @@ def make_session() -> Session:
     return Session(engine)
 
 
-def write_lesson_md(path: Path, id: str, status: str = "active", tags: list[str] | None = None) -> None:
+def write_lesson_md(
+    path: Path, id: str, status: str = "active", tags: list[str] | None = None
+) -> None:
     tags_str = ", ".join(tags or [])
     content = textwrap.dedent(f"""\
         ---
@@ -92,9 +94,7 @@ def test_sync_status_reflected(tmp_path):
     sync_lessons_index(session, ksor_root=tmp_path)
     session.commit()
 
-    row = session.execute(
-        select(LessonIndex).where(LessonIndex.lesson_id == "L-0001")
-    ).scalar_one()
+    row = session.execute(select(LessonIndex).where(LessonIndex.lesson_id == "L-0001")).scalar_one()
     assert row.status == "candidate"
 
 
@@ -120,9 +120,7 @@ def test_removed_file_marked_deprecated(tmp_path):
     sync_lessons_index(session, ksor_root=tmp_path)
     session.commit()
 
-    row = session.execute(
-        select(LessonIndex).where(LessonIndex.lesson_id == "L-0001")
-    ).scalar_one()
+    row = session.execute(select(LessonIndex).where(LessonIndex.lesson_id == "L-0001")).scalar_one()
     assert row.status == "deprecated"
 
 
@@ -178,8 +176,6 @@ def test_tags_stored(tmp_path):
     sync_lessons_index(session, ksor_root=tmp_path)
     session.commit()
 
-    row = session.execute(
-        select(LessonIndex).where(LessonIndex.lesson_id == "L-0001")
-    ).scalar_one()
+    row = session.execute(select(LessonIndex).where(LessonIndex.lesson_id == "L-0001")).scalar_one()
     # tags stored as JSON string or comma-separated
     assert "funding_negative" in (row.tags or "")

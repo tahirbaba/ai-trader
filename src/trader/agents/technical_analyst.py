@@ -60,8 +60,7 @@ class TechnicalAnalyst:
         """
         # Feature data is structured numeric data — safe to include as JSON
         prompt = (
-            f"Symbol: {symbol}\n\n"
-            f"Feature pack:\n{json.dumps(feature_pack_dict, default=str)}"
+            f"Symbol: {symbol}\n\n" f"Feature pack:\n{json.dumps(feature_pack_dict, default=str)}"
         )
 
         try:

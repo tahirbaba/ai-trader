@@ -129,7 +129,9 @@ def build_orchestrator(
     pos_reviewer.review.return_value = position_review or PositionReview(action="HOLD")
 
     lesson_filter = MagicMock()
-    lesson_filter.evaluate.return_value = _lesson_result(blocked=lesson_blocked, penalty=lesson_penalty)
+    lesson_filter.evaluate.return_value = _lesson_result(
+        blocked=lesson_blocked, penalty=lesson_penalty
+    )
 
     risk_gate = MagicMock()
     risk_gate._kill_switch_on = kill_switch
@@ -191,14 +193,20 @@ def run(orch: TradeCycleOrchestrator, fp: dict | None = None, open_pos: dict | N
 
 
 class TestPromptRegression:
-
     # 1. FOMC blackout → NO_TRADE
     def test_01_fomc_blackout(self):
         settings = _make_settings()
         orch = build_orchestrator(
             settings,
             risk_verdict=_rejected_verdict("MACRO_BLACKOUT"),
-            decision=BrainDecision(action="LONG", symbol="BTC/USDT", entry_price=50000, stop_loss=48000, take_profit=55000, confidence=0.75),
+            decision=BrainDecision(
+                action="LONG",
+                symbol="BTC/USDT",
+                entry_price=50000,
+                stop_loss=48000,
+                take_profit=55000,
+                confidence=0.75,
+            ),
         )
         result = run(orch, {"confluence_score": 3, "is_macro_blackout": True})
         assert result.action == "NO_TRADE"
@@ -224,7 +232,14 @@ class TestPromptRegression:
         settings = _make_settings()
         orch = build_orchestrator(
             settings,
-            decision=BrainDecision(action="LONG", symbol="BTC/USDT", entry_price=50000, stop_loss=48000, take_profit=55000, confidence=0.75),
+            decision=BrainDecision(
+                action="LONG",
+                symbol="BTC/USDT",
+                entry_price=50000,
+                stop_loss=48000,
+                take_profit=55000,
+                confidence=0.75,
+            ),
             risk_verdict=_rejected_verdict("SPREAD_TOO_WIDE"),
         )
         result = run(orch, {"confluence_score": 3, "spread_pct": 0.5})
@@ -236,13 +251,32 @@ class TestPromptRegression:
         settings = _make_settings()
         orch = build_orchestrator(
             settings,
-            decision=BrainDecision(action="LONG", symbol="BTC/USDT", entry_price=50000, stop_loss=48000, take_profit=55000, confidence=0.75),
+            decision=BrainDecision(
+                action="LONG",
+                symbol="BTC/USDT",
+                entry_price=50000,
+                stop_loss=48000,
+                take_profit=55000,
+                confidence=0.75,
+            ),
             risk_verdict=_rejected_verdict("EQUITY_FLOOR"),
         )
-        result = run(orch, {
-            "confluence_score": 3,
-            "account_state": {"equity_usd": 1.0, "daily_loss_usd": 0, "weekly_loss_usd": 0, "consecutive_losses": 0, "last_loss_ts": None, "open_positions": 0, "trades_today": 0, "llm_cost_today_usd": 0},
-        })
+        result = run(
+            orch,
+            {
+                "confluence_score": 3,
+                "account_state": {
+                    "equity_usd": 1.0,
+                    "daily_loss_usd": 0,
+                    "weekly_loss_usd": 0,
+                    "consecutive_losses": 0,
+                    "last_loss_ts": None,
+                    "open_positions": 0,
+                    "trades_today": 0,
+                    "llm_cost_today_usd": 0,
+                },
+            },
+        )
         assert result.action == "NO_TRADE"
 
     # 6. Daily loss limit hit → NO_TRADE
@@ -250,7 +284,14 @@ class TestPromptRegression:
         settings = _make_settings()
         orch = build_orchestrator(
             settings,
-            decision=BrainDecision(action="LONG", symbol="BTC/USDT", entry_price=50000, stop_loss=48000, take_profit=55000, confidence=0.75),
+            decision=BrainDecision(
+                action="LONG",
+                symbol="BTC/USDT",
+                entry_price=50000,
+                stop_loss=48000,
+                take_profit=55000,
+                confidence=0.75,
+            ),
             risk_verdict=_rejected_verdict("DAILY_LOSS_LIMIT"),
         )
         result = run(orch, {"confluence_score": 3})
@@ -261,7 +302,14 @@ class TestPromptRegression:
         settings = _make_settings(min_confidence=0.7)
         orch = build_orchestrator(
             settings,
-            decision=BrainDecision(action="LONG", symbol="BTC/USDT", entry_price=50000, stop_loss=48000, take_profit=55000, confidence=0.75),
+            decision=BrainDecision(
+                action="LONG",
+                symbol="BTC/USDT",
+                entry_price=50000,
+                stop_loss=48000,
+                take_profit=55000,
+                confidence=0.75,
+            ),
             lesson_penalty=0.2,  # 0.75 - 0.20 = 0.55 < 0.70
             risk_verdict=_rejected_verdict("LOW_CONFIDENCE"),
         )
@@ -330,7 +378,14 @@ class TestPromptRegression:
         settings = _make_settings()
         orch = build_orchestrator(
             settings,
-            decision=BrainDecision(action="LONG", symbol="BTC/USDT", entry_price=50000, stop_loss=48000, take_profit=55000, confidence=0.75),
+            decision=BrainDecision(
+                action="LONG",
+                symbol="BTC/USDT",
+                entry_price=50000,
+                stop_loss=48000,
+                take_profit=55000,
+                confidence=0.75,
+            ),
             lesson_blocked=True,
         )
         result = run(orch, {"confluence_score": 3})
@@ -342,7 +397,14 @@ class TestPromptRegression:
         settings = _make_settings(allowed_symbols=["ETH/USDT"])  # BTC not allowed
         orch = build_orchestrator(
             settings,
-            decision=BrainDecision(action="LONG", symbol="BTC/USDT", entry_price=50000, stop_loss=48000, take_profit=55000, confidence=0.75),
+            decision=BrainDecision(
+                action="LONG",
+                symbol="BTC/USDT",
+                entry_price=50000,
+                stop_loss=48000,
+                take_profit=55000,
+                confidence=0.75,
+            ),
             risk_verdict=_rejected_verdict("SYMBOL_NOT_ALLOWED"),
         )
         result = run(orch, {"confluence_score": 3})
@@ -353,7 +415,14 @@ class TestPromptRegression:
         settings = _make_settings()
         orch = build_orchestrator(
             settings,
-            decision=BrainDecision(action="LONG", symbol="BTC/USDT", entry_price=50000, stop_loss=52000, take_profit=55000, confidence=0.75),
+            decision=BrainDecision(
+                action="LONG",
+                symbol="BTC/USDT",
+                entry_price=50000,
+                stop_loss=52000,
+                take_profit=55000,
+                confidence=0.75,
+            ),
             risk_verdict=_rejected_verdict("MISSING_STOP_LOSS"),
         )
         result = run(orch, {"confluence_score": 3})
@@ -380,7 +449,14 @@ class TestPromptRegression:
         settings = _make_settings()
         orch = build_orchestrator(
             settings,
-            decision=BrainDecision(action="LONG", symbol="BTC/USDT", entry_price=50000, stop_loss=48000, take_profit=55000, confidence=0.75),
+            decision=BrainDecision(
+                action="LONG",
+                symbol="BTC/USDT",
+                entry_price=50000,
+                stop_loss=48000,
+                take_profit=55000,
+                confidence=0.75,
+            ),
             risk_verdict=_rejected_verdict("ENTRY_DRIFT"),
         )
         result = run(orch, {"confluence_score": 3, "snapshot_price": 50000, "live_price": 60000})
@@ -391,7 +467,14 @@ class TestPromptRegression:
         settings = _make_settings()
         orch = build_orchestrator(
             settings,
-            decision=BrainDecision(action="LONG", symbol="BTC/USDT", entry_price=50000, stop_loss=48000, take_profit=55000, confidence=0.75),
+            decision=BrainDecision(
+                action="LONG",
+                symbol="BTC/USDT",
+                entry_price=50000,
+                stop_loss=48000,
+                take_profit=55000,
+                confidence=0.75,
+            ),
             risk_verdict=_rejected_verdict("CONSECUTIVE_LOSSES"),
         )
         result = run(orch, {"confluence_score": 3})
@@ -402,7 +485,14 @@ class TestPromptRegression:
         settings = _make_settings()
         orch = build_orchestrator(
             settings,
-            decision=BrainDecision(action="LONG", symbol="BTC/USDT", entry_price=50000, stop_loss=48000, take_profit=55000, confidence=0.75),
+            decision=BrainDecision(
+                action="LONG",
+                symbol="BTC/USDT",
+                entry_price=50000,
+                stop_loss=48000,
+                take_profit=55000,
+                confidence=0.75,
+            ),
             risk_verdict=_rejected_verdict("WEEKLY_LOSS_LIMIT"),
         )
         result = run(orch, {"confluence_score": 3})
@@ -424,6 +514,7 @@ class TestPromptRegression:
 
         def slow_analyze(*args, **kwargs):
             import time
+
             time.sleep(100)
 
         macro_analyst.analyze.side_effect = slow_analyze

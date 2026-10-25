@@ -255,9 +255,8 @@ class RiskGate:
             # Short position: positive funding means longs pay shorts — that's against shorts
             funding_against_long = market.funding_rate < 0
             funding_against_short = market.funding_rate > 0
-            funding_against = (
-                (side_lower == "long" and funding_against_long)
-                or (side_lower == "short" and funding_against_short)
+            funding_against = (side_lower == "long" and funding_against_long) or (
+                side_lower == "short" and funding_against_short
             )
             if within_window and funding_against:
                 return self._reject("FUNDING_WINDOW", rules_failed)
@@ -369,9 +368,7 @@ class RiskGate:
         )
 
     @staticmethod
-    def _reject_with_liq(
-        rule_name: str, rules_failed: list[str], liq_price: float
-    ) -> RiskVerdict:
+    def _reject_with_liq(rule_name: str, rules_failed: list[str], liq_price: float) -> RiskVerdict:
         rules_failed.append(rule_name)
         return RiskVerdict(
             approved=False,
