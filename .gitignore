@@ -13,3 +13,4 @@ dist/
 venv/
 config/live_approval.yaml
 .claude/worktrees/
+.coverage
