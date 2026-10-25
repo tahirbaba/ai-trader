@@ -146,6 +146,208 @@ class TestNewsCollector:
 
         assert isinstance(result, CollectorResult)
 
+    def test_item_has_age_minutes_field(self):
+        """Each item must carry age_minutes (float) and context_only (bool)."""
+        from trader.data.news import NewsCollector
+
+        entry = _make_feed_entry(
+            title="XRP partnership announced",
+            link="https://example.com/xrp",
+            # recent publish time
+            published_parsed=(2026, 10, 21, 12, 0, 0, 0, 0, 0),
+        )
+        fake_feed = _make_fake_feed([entry])
+
+        with _patch_fetch(fake_feed):
+            collector = NewsCollector()
+            result = collector.collect()
+
+        item = result.data["items"][0]
+        assert "age_minutes" in item
+        assert isinstance(item["age_minutes"], float)
+        assert "context_only" in item
+        assert isinstance(item["context_only"], bool)
+
+    def test_old_item_marked_context_only(self):
+        """Items older than _MAX_DECISION_AGE_MINUTES are context_only=True."""
+        import datetime
+        from unittest.mock import patch
+
+        from trader.data.news import _MAX_DECISION_AGE_MINUTES, NewsCollector
+
+        # Item published 3 hours ago
+        old_pub = (2026, 10, 21, 9, 0, 0, 0, 0, 0)
+        now = datetime.datetime(2026, 10, 21, 12, 0, 0, tzinfo=datetime.UTC)
+        entry = _make_feed_entry(title="Old news", link="https://example.com/old", published_parsed=old_pub)
+        fake_feed = _make_fake_feed([entry])
+
+        with _patch_fetch(fake_feed), patch("trader.data.news.datetime") as mock_dt:
+            mock_dt.datetime.now.return_value = now
+            mock_dt.UTC = datetime.UTC
+            mock_dt.datetime.side_effect = datetime.datetime
+            collector = NewsCollector()
+            result = collector.collect()
+
+        item = result.data["items"][0]
+        assert item["age_minutes"] > _MAX_DECISION_AGE_MINUTES
+        assert item["context_only"] is True
+
+    def test_new_rss_feeds_in_feed_urls(self):
+        """Feed list includes Fed, TheBlock, Decrypt RSS sources."""
+        from trader.data.news import _FEED_URLS
+
+        source_labels = [label for _, label in _FEED_URLS]
+        assert "FederalReserve" in source_labels
+        assert "TheBlock" in source_labels
+        assert "Decrypt" in source_labels
+
+
+class TestComputeNewsChaseBlock:
+    def test_no_block_when_atr_is_none(self):
+        """Returns (False, '') when ATR is None."""
+        from trader.data.news import compute_news_chase_block
+
+        items = [{"age_minutes": 5.0, "injection_flag": False}]
+        block, direction = compute_news_chase_block(
+            items=items, price_now=1.0, price_at_signal=0.5, atr=None
+        )
+        assert block is False
+        assert direction == ""
+
+    def test_no_block_when_move_below_threshold(self):
+        """Price moved less than no_chase_atr_multiple * ATR → no block."""
+        from trader.data.news import compute_news_chase_block
+
+        items = [{"age_minutes": 5.0, "injection_flag": False}]
+        # Move of 0.5, ATR=1.0, multiple=1.5 → threshold=1.5; 0.5 < 1.5
+        block, direction = compute_news_chase_block(
+            items=items, price_now=1.5, price_at_signal=1.0, atr=1.0, no_chase_atr_multiple=1.5
+        )
+        assert block is False
+
+    def test_block_long_when_price_surged_with_fresh_item(self):
+        """Price surged > threshold AND fresh item → block longs."""
+        from trader.data.news import compute_news_chase_block
+
+        items = [{"age_minutes": 5.0, "injection_flag": False}]
+        # Move of 3.0, ATR=1.0, multiple=1.5 → threshold=1.5; 3.0 > 1.5
+        block, direction = compute_news_chase_block(
+            items=items, price_now=4.0, price_at_signal=1.0, atr=1.0, no_chase_atr_multiple=1.5
+        )
+        assert block is True
+        assert direction == "long"
+
+    def test_block_short_when_price_dropped_with_fresh_item(self):
+        """Price dropped > threshold AND fresh item → block shorts."""
+        from trader.data.news import compute_news_chase_block
+
+        items = [{"age_minutes": 5.0, "injection_flag": False}]
+        # Move of -3.0, ATR=1.0, multiple=1.5 → threshold=1.5; abs(-3.0) > 1.5
+        block, direction = compute_news_chase_block(
+            items=items, price_now=1.0, price_at_signal=4.0, atr=1.0, no_chase_atr_multiple=1.5
+        )
+        assert block is True
+        assert direction == "short"
+
+    def test_no_block_when_all_items_stale(self):
+        """All items older than max_item_age_minutes → no block even if price moved."""
+        from trader.data.news import compute_news_chase_block
+
+        items = [{"age_minutes": 90.0, "injection_flag": False}]
+        block, direction = compute_news_chase_block(
+            items=items,
+            price_now=4.0,
+            price_at_signal=1.0,
+            atr=1.0,
+            no_chase_atr_multiple=1.5,
+            max_item_age_minutes=60.0,
+        )
+        assert block is False
+
+    def test_no_block_when_only_injection_items(self):
+        """Injection-flagged items don't count as fresh real news."""
+        from trader.data.news import compute_news_chase_block
+
+        items = [{"age_minutes": 5.0, "injection_flag": True}]
+        block, direction = compute_news_chase_block(
+            items=items, price_now=4.0, price_at_signal=1.0, atr=1.0
+        )
+        assert block is False
+
+    def test_risk_gate_blocks_long_on_news_chase(self):
+        """RiskGate.evaluate() returns NEWS_NO_CHASE when chase block is set."""
+        from trader.config.settings import AppSettings, ModelNames, RiskSettings, Settings
+        from trader.risk.gate import RiskGate
+        from trader.risk.models import (
+            AccountState,
+            DecisionInput,
+            LessonCheckInput,
+            MarketState,
+        )
+
+        settings = Settings(
+            trading_mode="paper",
+            app=AppSettings(models=ModelNames(screening="x", decision="x", review="x")),
+            risk=RiskSettings(
+                max_margin_per_trade_usd=200.0,
+                max_loss_per_trade_usd=100.0,
+                slippage_buffer_pct=0.05,
+                max_leverage=10,
+                margin_mode="isolated",
+                position_mode="one_way",
+                daily_loss_limit_usd=300.0,
+                weekly_loss_limit_usd=600.0,
+                equity_floor_usd=5.0,
+                allowed_symbols=["XRP/USDT:USDT"],
+            ),
+        )
+        gate = RiskGate(settings=settings)
+        decision = DecisionInput(
+            action="LONG",
+            symbol="XRP/USDT:USDT",
+            side="long",
+            entry_price=0.60,
+            stop_loss=0.54,
+            take_profit=0.72,
+            confidence=0.85,
+            confluence_score=4,
+            entry_type="market",
+        )
+        market = MarketState(
+            symbol="XRP/USDT:USDT",
+            live_price=0.60,
+            snapshot_price=0.60,
+            atr_14=None,
+            spread_pct=0.001,
+            funding_rate=0.0001,
+            next_funding_ts=None,
+            data_age_seconds=1.0,
+            clock_drift_ms=0.0,
+            is_macro_blackout=False,
+            macro_blackout_name="",
+            is_exchange_blackout=False,
+            exchange_blackout_reason="",
+            news_chase_block=True,
+            news_chase_direction="long",  # block longs
+        )
+        verdict = gate.evaluate(
+            decision=decision,
+            lesson_check=LessonCheckInput(blocked=False, confidence_penalty=0.0),
+            account=AccountState(
+                equity_usd=10_000.0,
+                daily_loss_usd=0.0,
+                weekly_loss_usd=0.0,
+                consecutive_losses=0,
+                last_loss_ts=None,
+                open_positions=0,
+                trades_today=0,
+                llm_cost_today_usd=0.0,
+            ),
+            market=market,
+        )
+        assert verdict.approved is False
+        assert verdict.reject_reason == "NEWS_NO_CHASE"
+
     def test_dedupe_across_calls(self):
         """Same item fetched on second call → still deduplicated within same instance."""
         from trader.data.news import NewsCollector

@@ -149,6 +149,16 @@ class RiskGate:
             return self._reject("EXCHANGE_BLACKOUT", rules_failed)
 
         # ------------------------------------------------------------------ #
+        # 10b. news_no_chase — block when price already moved post-high-impact news
+        # ------------------------------------------------------------------ #
+        if market.news_chase_block:
+            # Block only if the proposed entry is in the same direction as the chase.
+            entry_side = decision.side.lower()
+            chase_side = market.news_chase_direction.lower()
+            if chase_side == "" or entry_side == chase_side:
+                return self._reject("NEWS_NO_CHASE", rules_failed)
+
+        # ------------------------------------------------------------------ #
         # 11. equity_floor
         # ------------------------------------------------------------------ #
         if account.equity_usd < self._risk.equity_floor_usd:
