@@ -7,6 +7,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
+- Phase 4: `KsorEntry` Pydantic model — canonical in-memory representation of any KSOR `.md` entry with all BUILD_PLAN.md §PHASE 4 fields.
+- Phase 4: `loader.py` — recursive `load_ksor_entries()` using `python-frontmatter`; parse errors skipped with a warning.
+- Phase 4: `rule_engine.py` — safe DSL evaluator: `all`/`any`/`not` wrappers + `{field, op, value}` leaf clauses; supported ops `eq/ne/lt/le/gt/ge/in/not_in`; dot-path field lookup; no eval/exec/importlib; unknown field → False, unknown op → `RuleEngineError`.
+- Phase 4: `indexer.py` — `KsorIndexer` wrapping SQLite FTS5 virtual table; supports in-memory mode for tests; `build()`, `upsert()`, `search()`, `get_all()`.
+- Phase 4: `retriever.py` — `KsorRetriever.retrieve(regime, symbol, side, tags, k, include_candidates)`: returns active entries (playbook + lessons) ranked by relevance score; deprecated never returned; candidates opt-in only.
+- Phase 4: `lesson_writer.py` — `LessonWriter`: path-guarded write-and-commit for `/ksor/lessons/`; every write produces a local git commit with linked trade IDs; `ksor_root` injectable for tests.
+- Phase 4: `sync.py` — `sync_lessons_index(session, ksor_root)`: upserts `lessons_index` rows from on-disk files; marks missing files as deprecated.
+- Phase 4: `src/trader/risk/lesson_filter.py` — `LessonFilter`: loads active lessons, evaluates rules via `rule_engine`, collects effects; loosening effects rejected at load time; returns `LessonFilterResult`.
+- Phase 4: Seed KSOR content — `ksor/playbook/` (P-0001 to P-0005), `ksor/mistakes/TAXONOMY.md` (14 types), `ksor/lessons/L-0001_no_short_strong_negative_funding.md`, updated `ksor/INDEX.md`.
+- Phase 4: 85 new tests across 6 test files: `test_ksor_loader`, `test_ksor_rule_engine`, `test_ksor_retriever`, `test_lesson_filter`, `test_lesson_writer`, `test_ksor_sync`.
+- ADR-006: KSOR schema and lesson rule DSL design decisions (six sub-decisions).
+- `python-frontmatter>=1.1` added to project dependencies.
+- `docs/specs/phase4-ksor.md` — ten acceptance criteria.
+
 - Phase 3: `FeaturePack` — frozen Pydantic model holding all computed features for a single bar.
 - Phase 3: `indicators.py` — pure-numpy EMA, SMA, RSI (Wilder's), MACD, ATR (Wilder's), Bollinger Bands, VWAP, swing highs/lows, BB%.
 - Phase 3: `alignment.py` — `trend_direction`, `mtf_alignment`, `htf_aligned` for multi-timeframe trend logic.
