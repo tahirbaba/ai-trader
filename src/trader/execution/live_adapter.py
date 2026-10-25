@@ -161,6 +161,11 @@ class LiveAdapter(ExchangeAdapter):
 
         exchange_order_id: str = order["id"]
 
+        # Determine whether the entry order is already filled.
+        entry_status = order.get("status", "open")
+        entry_filled = float(order.get("filled", 0.0) or 0.0)
+        entry_is_filled = entry_status in {"closed", "filled"} or entry_filled > 0
+
         # If SL was requested but not confirmed in response, place as separate stop order.
         # Covers both open (limit) and filled/closed (market) entry states.
         sl_confirmed = bool(order.get("stopLossPrice") or order.get("stopLoss"))
@@ -176,14 +181,48 @@ class LiveAdapter(ExchangeAdapter):
                     {"stopPrice": stop_loss, "reduceOnly": True},
                 )
             except Exception as sl_exc:
-                # Cancel entry and raise (best-effort cancel)
-                import contextlib  # noqa: PLC0415
-                with contextlib.suppress(Exception):
-                    self._exchange.cancel_order(exchange_order_id, symbol)
+                close_failed = False
+                if entry_is_filled:
+                    # Entry already filled — cancel does nothing; place a market close.
+                    close_side = "sell" if side == "buy" else "buy"
+                    try:
+                        self._exchange.create_order(
+                            symbol,
+                            "market",
+                            close_side,
+                            qty,
+                            None,
+                            {"reduceOnly": True},
+                        )
+                    except Exception:
+                        close_failed = True
+                else:
+                    # Entry not yet filled — cancel it (best-effort).
+                    import contextlib  # noqa: PLC0415
+
+                    with contextlib.suppress(Exception):
+                        self._exchange.cancel_order(exchange_order_id, symbol)
                 raise SlPlacementError(
                     f"SL placement failed after entry {exchange_order_id}: {sl_exc}",
                     order_id=exchange_order_id,
+                    close_failed=close_failed,
                 ) from sl_exc
+
+            # SL placed separately — verify it actually exists as a conditional order.
+            try:
+                open_orders = self._exchange.fetch_open_orders(symbol)
+            except Exception:
+                open_orders = []
+            sl_types = {"stop", "stop_market", "stop_limit"}
+            sl_verified = any(
+                o.get("type") in sl_types and o.get("reduceOnly", False) for o in open_orders
+            )
+            if not sl_verified:
+                raise SlPlacementError(
+                    f"SL verification failed: no stop/reduce_only order found for "
+                    f"entry {exchange_order_id}",
+                    order_id=exchange_order_id,
+                )
 
         filled_qty = float(order.get("filled", 0.0) or 0.0)
         avg_price = float(order.get("average") or order.get("price") or price or 0.0)
@@ -239,18 +278,10 @@ class LiveAdapter(ExchangeAdapter):
             return {
                 "lot_size": float(m.get("precision", {}).get("amount", 1.0) or 1.0),
                 "min_qty": float(amount_limits.get("min", 1.0) or 1.0),
-                "tick_size": float(
-                    m.get("precision", {}).get("price", 0.01) or 0.01
-                ),
-                "maker_fee": float(
-                    fees.get("maker", 0.0002) or 0.0002
-                ),
-                "taker_fee": float(
-                    fees.get("taker", 0.00055) or 0.00055
-                ),
-                "max_leverage": float(
-                    m.get("limits", {}).get("leverage", {}).get("max", 10) or 10
-                ),
+                "tick_size": float(m.get("precision", {}).get("price", 0.01) or 0.01),
+                "maker_fee": float(fees.get("maker", 0.0002) or 0.0002),
+                "taker_fee": float(fees.get("taker", 0.00055) or 0.00055),
+                "max_leverage": float(m.get("limits", {}).get("leverage", {}).get("max", 10) or 10),
             }
         except AdapterError:
             raise

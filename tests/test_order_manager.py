@@ -179,9 +179,7 @@ class TestLayer2CapBreach:
 
 
 class TestSlPlacementFailure:
-    def test_sl_failure_cancels_entry_records_risk_event(
-        self, session_factory: object
-    ) -> None:
+    def test_sl_failure_cancels_entry_records_risk_event(self, session_factory: object) -> None:
         """SlPlacementError: entry cancelled, risk_event recorded, exception re-raised."""
         mock_broker = MagicMock()
         mock_broker.get_market_meta.return_value = {

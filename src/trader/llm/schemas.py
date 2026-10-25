@@ -11,8 +11,8 @@ class AnalystReport(BaseModel):
     """Base report returned by every specialist analyst."""
 
     agent: str
-    bias: str           # "bullish" | "bearish" | "neutral"
-    confidence: float   # 0.0–1.0
+    bias: str  # "bullish" | "bearish" | "neutral"
+    confidence: float  # 0.0–1.0
     key_points: list[str] = []
     risks: list[str] = []
     data_used: list[str] = []
@@ -44,7 +44,7 @@ class BrainDecision(BaseModel):
     entry_type: str = "limit"
     entry_price: float = 0.0
     stop_loss: float = 0.0
-    take_profit: float = 0.0    # single TP
+    take_profit: float = 0.0  # single TP
     invalidation: str = ""
     confidence: float = 0.0
     thesis: str = ""

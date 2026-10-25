@@ -87,11 +87,7 @@ def test_long_sizing_loss_at_stop_formula():
 
     stop_dist = abs(kw["entry"] - kw["stop"])
     stop_dist_slip = stop_dist * (1 + SLIP)
-    expected_loss = (
-        qty * stop_dist_slip
-        + kw["entry"] * qty * TAKER
-        + kw["stop"] * qty * TAKER
-    )
+    expected_loss = qty * stop_dist_slip + kw["entry"] * qty * TAKER + kw["stop"] * qty * TAKER
     assert abs(loss - expected_loss) < 1e-9
 
 
@@ -312,9 +308,9 @@ def test_rr_returns_false_when_risk_zero():
     passes, rr = check_risk_reward(
         side="long",
         entry=0.5,
-        stop=0.5,    # stop == entry → stop_distance = 0
+        stop=0.5,  # stop == entry → stop_distance = 0
         take_profit=0.6,
-        qty=0.0,     # zero qty → all terms zero → risk_after_fees = 0
+        qty=0.0,  # zero qty → all terms zero → risk_after_fees = 0
         maker_fee_rate=MAKER,
         taker_fee_rate=TAKER,
         min_rr=1.5,

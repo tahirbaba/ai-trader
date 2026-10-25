@@ -86,7 +86,11 @@ def compute_size(
         )
 
     # Verify final loss_at_stop does not exceed cap (rounding should only reduce it)
-    final_loss = qty * stop_distance_with_slippage + entry * qty * taker_fee_rate + stop * qty * taker_fee_rate
+    final_loss = (
+        qty * stop_distance_with_slippage
+        + entry * qty * taker_fee_rate
+        + stop * qty * taker_fee_rate
+    )
     if final_loss > max_loss_usd + 1e-9:
         raise SizingError(
             f"loss_at_stop {final_loss:.6f} exceeds max_loss_usd {max_loss_usd} after rounding"

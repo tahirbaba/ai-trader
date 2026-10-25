@@ -35,9 +35,7 @@ class PaperBroker(ExchangeAdapter):
         self._maker_fee = maker_fee
         self._taker_fee = taker_fee
         self._slippage_pct = slippage_pct
-        self._clock_fn: Callable[[], datetime] = clock_fn or (
-            lambda: datetime.utcnow()
-        )
+        self._clock_fn: Callable[[], datetime] = clock_fn or (lambda: datetime.utcnow())
 
         # Balance tracking
         self._cash: float = initial_balance
@@ -138,9 +136,7 @@ class PaperBroker(ExchangeAdapter):
         """
         # Idempotency check
         if client_order_id is not None and client_order_id in self._used_client_ids:
-            raise DuplicateOrderError(
-                f"client_order_id already used: {client_order_id}"
-            )
+            raise DuplicateOrderError(f"client_order_id already used: {client_order_id}")
 
         order_id = str(uuid.uuid4())
         if client_order_id is None:
@@ -318,7 +314,12 @@ class PaperBroker(ExchangeAdapter):
                 tp = pos.get("tp_price")
                 if tp is not None:
                     triggered = False
-                    if pos["side"] == "buy" and price >= tp or pos["side"] == "sell" and price <= tp:
+                    if (
+                        pos["side"] == "buy"
+                        and price >= tp
+                        or pos["side"] == "sell"
+                        and price <= tp
+                    ):
                         triggered = True
 
                     if triggered:
@@ -331,9 +332,7 @@ class PaperBroker(ExchangeAdapter):
         expired = [
             oid
             for oid, o in list(self._pending_orders.items())
-            if o["symbol"] == symbol
-            and o.get("ttl_ts") is not None
-            and now > o["ttl_ts"]
+            if o["symbol"] == symbol and o.get("ttl_ts") is not None and now > o["ttl_ts"]
         ]
         for oid in expired:
             self._pending_orders[oid]["status"] = "expired"
@@ -414,9 +413,7 @@ class PaperBroker(ExchangeAdapter):
 
         # Deduct from cash (long pays when rate > 0)
         self._cash -= funding_amount
-        self._funding_paid[symbol] = (
-            self._funding_paid.get(symbol, 0.0) + funding_amount
-        )
+        self._funding_paid[symbol] = self._funding_paid.get(symbol, 0.0) + funding_amount
         pos["funding_paid"] = float(pos.get("funding_paid", 0.0)) + funding_amount
 
         return funding_amount
@@ -496,9 +493,7 @@ class PaperBroker(ExchangeAdapter):
             existing["margin"] += margin
             self._cash -= margin + fee
 
-    def _close_position(
-        self, symbol: str, exit_price: float, reason: str
-    ) -> dict[str, Any] | None:
+    def _close_position(self, symbol: str, exit_price: float, reason: str) -> dict[str, Any] | None:
         """Close position at exit_price and return fill dict."""
         pos = self._positions.get(symbol)
         if pos is None:

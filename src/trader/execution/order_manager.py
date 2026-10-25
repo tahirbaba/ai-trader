@@ -117,9 +117,7 @@ class OrderManager:
             entry_price=decision.entry_price,
             stop_price=decision.stop_loss,
             lot_size=float(market_meta.get("lot_size", 1.0)),
-            max_leverage=float(
-                market_meta.get("max_leverage", self._settings.risk.max_leverage)
-            ),
+            max_leverage=float(market_meta.get("max_leverage", self._settings.risk.max_leverage)),
             max_margin_usd=self._settings.risk.max_margin_per_trade_usd,
             max_loss_usd=self._settings.risk.max_loss_per_trade_usd,
             slippage_buffer_pct=self._settings.risk.slippage_buffer_pct,
@@ -132,9 +130,7 @@ class OrderManager:
         # Step 3: Place order
         broker_side = "buy" if decision.side.lower() == "long" else "sell"
         order_type = decision.entry_type  # "market" | "limit"
-        limit_price: float | None = (
-            decision.entry_price if order_type == "limit" else None
-        )
+        limit_price: float | None = decision.entry_price if order_type == "limit" else None
 
         try:
             result = self._broker.place_order(
@@ -151,28 +147,16 @@ class OrderManager:
         except DuplicateOrderError:
             raise
         except SlPlacementError as sl_exc:
-            # Step 4: SL placement failure — cancel entry, close position, record event
-            import contextlib  # noqa: PLC0415
-
-            exchange_oid = getattr(sl_exc, "order_id", None) or ""
-            if exchange_oid:
-                with contextlib.suppress(Exception):
-                    self._broker.cancel_order(decision.symbol, exchange_oid)
-            # Best-effort market close
-            try:
-                close_side = "sell" if broker_side == "buy" else "buy"
-                self._broker.place_order(
-                    symbol=decision.symbol,
-                    side=close_side,
-                    qty=qty,
-                    order_type="market",
-                    reduce_only=True,
-                    client_order_id=f"{client_order_id}-close",
+            # Step 4: SL placement failure — cancel/close is already handled inside
+            # LiveAdapter. OrderManager only records events and activates the kill switch.
+            if getattr(sl_exc, "close_failed", False):
+                self._record_risk_event(
+                    "HALT_CLOSE_FAILED",
+                    f"SL placement failed AND market close failed: {sl_exc} "
+                    f"(entry order_id={getattr(sl_exc, 'order_id', '')})",
                 )
-            except Exception as close_exc:
-                logger.error("force close after SL failure also failed: %s", close_exc)
-
             self._record_risk_event("HALT", f"SL placement failed: {sl_exc}")
+            self._set_kill_switch()
             raise
 
         except AdapterError as exc:
@@ -213,9 +197,7 @@ class OrderManager:
             session.flush()
 
             if filled_qty > 0 and avg_price > 0:
-                fee = avg_price * filled_qty * float(
-                    market_meta.get("taker_fee", 0.00055)
-                )
+                fee = avg_price * filled_qty * float(market_meta.get("taker_fee", 0.00055))
                 fill_row = FillRow(
                     order_id=order_row.id,
                     price=avg_price,
@@ -257,9 +239,7 @@ class OrderManager:
 
     def reconcile(self, symbol: str) -> ReconcileResult:
         """Compare broker positions vs DSOR open orders. Mismatch → log risk_event."""
-        broker_positions = [
-            p for p in self._broker.get_positions() if p.get("symbol") == symbol
-        ]
+        broker_positions = [p for p in self._broker.get_positions() if p.get("symbol") == symbol]
         broker_open_orders = self._broker.get_open_orders(symbol)
 
         # Query DSOR
@@ -290,9 +270,7 @@ class OrderManager:
 
         # Check: broker has position, DSOR has no open order
         if broker_positions and not dsor_open_orders and not broker_open_orders:
-            mismatch = (
-                f"Broker has position for {symbol} but DSOR has no open orders"
-            )
+            mismatch = f"Broker has position for {symbol} but DSOR has no open orders"
             mismatches.append(mismatch)
             self._record_risk_event("RECONCILE_MISMATCH", mismatch)
 
@@ -369,6 +347,17 @@ class OrderManager:
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+
+    def _set_kill_switch(self) -> None:
+        """Activate the system kill switch in DSOR."""
+        try:
+            from trader.dsor.system_state import SystemStateHelper  # noqa: PLC0415
+
+            session = self._session_factory()
+            SystemStateHelper(session).set_kill_switch(True)
+            session.commit()
+        except Exception as exc:
+            logger.error("Failed to set kill switch: %s", exc)
 
     def _record_risk_event(self, event_type: str, details: str) -> None:
         """Write a RiskEvent row to DSOR."""

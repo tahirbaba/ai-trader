@@ -164,9 +164,7 @@ def test_approved_order_never_exceeds_cap(
         # Also verify margin
         if verdict.adjusted_size is not None:
             margin = verdict.adjusted_size * entry / MAX_LEVERAGE
-            assert margin <= MAX_MARGIN_USD + 1e-6, (
-                f"margin {margin} > max_margin {MAX_MARGIN_USD}"
-            )
+            assert margin <= MAX_MARGIN_USD + 1e-6, f"margin {margin} > max_margin {MAX_MARGIN_USD}"
 
 
 # ------------------------------------------------------------------
@@ -211,9 +209,7 @@ def test_no_approved_order_lacks_stop_loss(
     )
     if verdict.approved:
         # For a long, stop must be strictly below entry
-        assert stop < entry, (
-            f"Long approved but stop {stop} >= entry {entry}"
-        )
+        assert stop < entry, f"Long approved but stop {stop} >= entry {entry}"
 
 
 # ------------------------------------------------------------------

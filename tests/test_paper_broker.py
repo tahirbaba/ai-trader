@@ -27,6 +27,7 @@ def _make_settings() -> Settings:
     app = AppSettings(models=ModelNames(screening="x", decision="x", review="x"))
     return Settings(trading_mode="paper", app=app, risk=risk)
 
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

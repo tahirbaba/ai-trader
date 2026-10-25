@@ -1,7 +1,5 @@
 """Tests for ksor/retriever.py — retrieve() returns correct entries."""
 
-
-
 from trader.ksor.indexer import KsorIndexer
 from trader.ksor.loader import KsorEntry
 from trader.ksor.retriever import KsorRetriever

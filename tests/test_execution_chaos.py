@@ -123,9 +123,7 @@ class TestChaos:
         assert result.error is not None
         assert "network timeout" in result.error
 
-    def test_partial_fill_reflected_in_order_result(
-        self, session_factory: object
-    ) -> None:
+    def test_partial_fill_reflected_in_order_result(self, session_factory: object) -> None:
         """Broker returns filled_qty < qty → OrderResult reflects partial."""
         broker = mock_broker_with_meta(
             {
@@ -200,9 +198,7 @@ class TestChaos:
         # Position should be gone
         assert broker.get_positions() == []
 
-    def test_reconcile_with_injected_mismatch_returns_not_ok(
-        self, session_factory: object
-    ) -> None:
+    def test_reconcile_with_injected_mismatch_returns_not_ok(self, session_factory: object) -> None:
         """Reconcile with a broker position and empty DSOR → ReconcileResult(ok=False)."""
         broker = PaperBroker(initial_balance=10_000.0)
         broker._mark_prices["XRP/USDT:USDT"] = 1.0

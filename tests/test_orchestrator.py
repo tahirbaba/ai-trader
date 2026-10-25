@@ -279,6 +279,7 @@ class TestAnalystTimeout:
 
         def slow_analyze(*args, **kwargs):
             import time
+
             time.sleep(100)  # simulate timeout
 
         macro_analyst.analyze.side_effect = slow_analyze

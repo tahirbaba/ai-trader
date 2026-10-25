@@ -66,9 +66,7 @@ def layer2_cap_check(
     if lot_size > 0:
         rounded = math.floor(qty / lot_size) * lot_size
         if abs(rounded - qty) > 1e-9:
-            raise CapBreachError(
-                f"qty {qty} is not a multiple of lot_size {lot_size} for {symbol}"
-            )
+            raise CapBreachError(f"qty {qty} is not a multiple of lot_size {lot_size} for {symbol}")
 
     # Margin check
     notional = entry_price * qty
@@ -82,9 +80,7 @@ def layer2_cap_check(
     # Loss-at-stop check — same formula as compute_size
     stop_distance = abs(entry_price - stop_price)
     if stop_distance == 0:
-        raise CapBreachError(
-            f"stop_distance is zero (entry == stop) for {symbol}"
-        )
+        raise CapBreachError(f"stop_distance is zero (entry == stop) for {symbol}")
     stop_distance_with_slippage = stop_distance * (1.0 + slippage_buffer_pct)
     entry_fee = entry_price * qty * taker_fee_rate
     exit_fee = stop_price * qty * taker_fee_rate
