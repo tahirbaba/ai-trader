@@ -20,6 +20,8 @@ dependencies = [
     "feedparser>=6.0",
     # Phase 3: feature engineering
     "numpy>=1.26",
+    # Phase 4: KSOR loader
+    "python-frontmatter>=1.1",
 ]
 
 [project.optional-dependencies]
