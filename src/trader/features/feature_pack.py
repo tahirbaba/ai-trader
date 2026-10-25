@@ -92,7 +92,7 @@ class FeaturePack(BaseModel):
         fields = {
             k: v
             for k, v in self.model_dump().items()
-            if isinstance(v, int | float) and v is not None
+            if isinstance(v, int | float) and not isinstance(v, bool) and v is not None
         }
         raw = json.dumps(fields, sort_keys=True)
         return hashlib.sha256(raw.encode()).hexdigest()

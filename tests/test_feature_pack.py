@@ -135,7 +135,7 @@ def test_build_feature_pack_golden_hash() -> None:
     )
     # Golden hash — computed on first run, then hardcoded.
     # Any change to the numeric feature pipeline will break this test.
-    GOLDEN_HASH = "58b68d3c6e5a15048d91d1ad6520a12366e355abe7873df88f76baf38c2b370d"
+    GOLDEN_HASH = "995d6fbefba51c7b51f88891612449b54e463e327f1c47b76747204f7f3b6e43"
     assert fp.features_hash == GOLDEN_HASH
 
 
@@ -239,6 +239,39 @@ def test_feature_pack_hash_matches_compute() -> None:
         book=_fixed_book(),
     )
     assert fp.features_hash == fp.compute_hash()
+
+
+def test_build_one_candle_no_crash() -> None:
+    """Single candle: indicators are None, model constructs without error."""
+    candles = _make_candles(1)
+    fp = build_feature_pack(
+        symbol=_SYMBOL,
+        primary_tf=_TF,
+        candles_by_tf={"15m": candles},
+        derivatives=None,
+        orderflow=None,
+        book=None,
+    )
+    assert fp.ema_20 is None
+    assert fp.rsi_14 is None
+    assert fp.atr_14 is None
+    assert fp.close == candles[0]["close"]
+
+
+def test_build_two_candles_no_crash() -> None:
+    """Two candles: still no indicators (below minimum period), no crash."""
+    candles = _make_candles(2)
+    fp = build_feature_pack(
+        symbol=_SYMBOL,
+        primary_tf=_TF,
+        candles_by_tf={"15m": candles},
+        derivatives=None,
+        orderflow=None,
+        book=None,
+    )
+    assert fp.ema_20 is None
+    assert fp.rsi_14 is None
+    assert fp.close == candles[-1]["close"]
 
 
 def test_feature_pack_ts_is_set() -> None:

@@ -45,8 +45,8 @@ def confluence_score(
         # momentum
         if rsi is not None and rsi > 50 and macd_hist is not None and macd_hist > 0:
             score += 1
-        # derivatives — shorts paying (funding_z < -1.5) → bullish
-        if funding_z is not None and funding_z < -1.5:
+        # derivatives — shorts paying (funding_z < -1.5) → bullish; skip if OI diverges
+        if funding_z is not None and funding_z < -1.5 and not oi_divergence:
             score += 1
         # orderflow — no bearish CVD divergence AND positive book imbalance
         if not cvd_divergence_bear and book_imbalance is not None and book_imbalance > 0.1:
@@ -65,8 +65,8 @@ def confluence_score(
         # momentum
         if rsi is not None and rsi < 50 and macd_hist is not None and macd_hist < 0:
             score += 1
-        # derivatives — longs paying (funding_z > 1.5) → bearish
-        if funding_z is not None and funding_z > 1.5:
+        # derivatives — longs paying (funding_z > 1.5) → bearish; skip if OI diverges
+        if funding_z is not None and funding_z > 1.5 and not oi_divergence:
             score += 1
         # orderflow — no bullish CVD divergence AND negative book imbalance
         if not cvd_divergence_bull and book_imbalance is not None and book_imbalance < -0.1:
