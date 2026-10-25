@@ -7,6 +7,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
+- Phase 7: `src/trader/execution/adapter.py` — `ExchangeAdapter` ABC with 11 abstract methods covering balance, positions, orders, leverage, margin mode, market metadata, and ping.
+- Phase 7: `src/trader/execution/paper_broker.py` — `PaperBroker(ExchangeAdapter)` realistic in-memory simulation with configurable fees, slippage, injectable clock, SL/TP triggers, TTL expiry, MAE/MFE tracking, and funding.
+- Phase 7: `src/trader/execution/live_adapter.py` — `LiveAdapter(ExchangeAdapter)` ccxt-based Bybit adapter; raises `LiveNotApprovedError` unless `config/live_approval.yaml` exists; lazy ccxt import.
+- Phase 7: `src/trader/execution/order_manager.py` — `OrderManager` with `submit()` (Layer 2 cap check → place → DSOR write), `cancel_expired_orders()`, `reconcile()`, `force_close()`; `OrderResult` and `ReconcileResult` Pydantic models.
+- Phase 7: `src/trader/execution/exceptions.py` — `AdapterError`, `LiveNotApprovedError`, `SlPlacementError`, `DuplicateOrderError`.
+- Phase 7: 43 new tests across 4 files: `test_paper_broker` (16), `test_live_adapter` (11), `test_order_manager` (9), `test_execution_chaos` (5).
+- Phase 7: `docs/specs/phase7-execution.md` and `docs/decisions/ADR-010-execution.md`.
+
 - Phase 5: `src/trader/risk/models.py` — Pydantic models for RiskGate I/O: `DecisionInput`, `AccountState`, `MarketState`, `LessonCheckInput`, `RiskVerdict`.
 - Phase 5: `src/trader/risk/sizing.py` — pure-function position sizing (`compute_size`), isolated-margin liquidation price (`compute_liquidation_price`), and risk-reward check (`check_risk_reward`); `SizingError` exception.
 - Phase 5: `src/trader/risk/gate.py` — `RiskGate.evaluate()` with 27 ordered checks: kill switch, live-mode guard, action filter, symbol allowlist, lesson block, clock drift, data freshness, spread, macro/exchange blackout, equity floor, daily/weekly loss limits, consecutive losses, cooldown, position/trade/LLM-budget caps, confidence, confluence, stop-loss validity, ATR range, funding window, sizing, liquidation buffer, risk-reward, and entry drift.
