@@ -177,7 +177,7 @@ class OrderManager:
 
         try:
             session = self._session_factory()
-            now = datetime.datetime.utcnow()
+            now = datetime.datetime.now(datetime.UTC)
 
             order_row = OrderRow(
                 decision_id=decision_db_id,
@@ -226,9 +226,11 @@ class OrderManager:
         """Cancel all open limit orders past their TTL. Returns count cancelled."""
         open_orders = self._broker.get_open_orders(symbol)
         count = 0
-        now = datetime.datetime.utcnow()
+        now = datetime.datetime.now(datetime.UTC)
         for order in open_orders:
             ttl_ts = order.get("ttl_ts")
+            if ttl_ts is not None and ttl_ts.tzinfo is None:
+                ttl_ts = ttl_ts.replace(tzinfo=datetime.UTC)
             if ttl_ts is not None and now > ttl_ts:
                 try:
                     self._broker.cancel_order(symbol, order["order_id"])
@@ -272,7 +274,6 @@ class OrderManager:
         if broker_positions and not dsor_open_orders and not broker_open_orders:
             mismatch = f"Broker has position for {symbol} but DSOR has no open orders"
             mismatches.append(mismatch)
-            self._record_risk_event("RECONCILE_MISMATCH", mismatch)
 
         # Check: DSOR has open orders, broker has no position and no open orders
         if dsor_open_orders and not broker_positions and not broker_open_orders:
@@ -281,7 +282,18 @@ class OrderManager:
                 "but broker has no positions/orders"
             )
             mismatches.append(mismatch)
-            self._record_risk_event("RECONCILE_MISMATCH", mismatch)
+
+        if mismatches:
+            for mismatch in mismatches:
+                self._record_risk_event("RECONCILE_MISMATCH", mismatch)
+            # Reconciliation mismatch is a critical integrity failure — halt immediately
+            self._set_kill_switch()
+            logger.critical(
+                "RECONCILE_MISMATCH: kill switch activated — %d mismatch(es) for %s: %s",
+                len(mismatches),
+                symbol,
+                mismatches,
+            )
 
         ok = len(mismatches) == 0
         return ReconcileResult(
@@ -368,7 +380,7 @@ class OrderManager:
         try:
             session = self._session_factory()
             event = RiskEvent(
-                ts=datetime.datetime.utcnow(),
+                ts=datetime.datetime.now(datetime.UTC),
                 type=event_type,
                 details=details,
             )

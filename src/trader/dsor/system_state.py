@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import datetime
+
 from sqlalchemy.orm import Session
 
 from trader.dsor.repositories import SystemStateRepository
@@ -9,6 +11,7 @@ from trader.dsor.repositories import SystemStateRepository
 _KEY_MODE = "trading_mode"
 _KEY_KILL_SWITCH = "kill_switch"
 _KEY_DAILY_LOSS = "daily_loss_usd"
+_KEY_SHOCK_UNTIL = "shock_until_iso"
 
 
 class SystemStateHelper:
@@ -47,3 +50,19 @@ class SystemStateHelper:
 
     def reset_daily_counters(self) -> None:
         self._repo.set(_KEY_DAILY_LOSS, "0.0")
+
+    def set_shock_until(self, until: datetime.datetime) -> None:
+        """Persist price-shock block expiry as ISO-8601 UTC string."""
+        if until.tzinfo is None:
+            until = until.replace(tzinfo=datetime.UTC)
+        self._repo.set(_KEY_SHOCK_UNTIL, until.isoformat())
+
+    def get_shock_until(self) -> datetime.datetime | None:
+        """Return UTC datetime when shock block expires, or None if not set."""
+        raw = self._repo.get(_KEY_SHOCK_UNTIL)
+        if raw is None:
+            return None
+        dt = datetime.datetime.fromisoformat(raw)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=datetime.UTC)
+        return dt

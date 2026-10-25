@@ -178,7 +178,9 @@ class TestNewsCollector:
         # Item published 3 hours ago
         old_pub = (2026, 10, 21, 9, 0, 0, 0, 0, 0)
         now = datetime.datetime(2026, 10, 21, 12, 0, 0, tzinfo=datetime.UTC)
-        entry = _make_feed_entry(title="Old news", link="https://example.com/old", published_parsed=old_pub)
+        entry = _make_feed_entry(
+            title="Old news", link="https://example.com/old", published_parsed=old_pub
+        )
         fake_feed = _make_fake_feed([entry])
 
         with _patch_fetch(fake_feed), patch("trader.data.news.datetime") as mock_dt:

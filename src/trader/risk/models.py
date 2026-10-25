@@ -62,11 +62,11 @@ class MarketState(BaseModel):
     macro_blackout_name: str
     is_exchange_blackout: bool
     exchange_blackout_reason: str
-    # News no-chase circuit breaker: set when a high-impact news item arrived
-    # and price has already moved > no_chase_atr_multiplier * ATR in that direction.
-    # The Risk Gate blocks new entries in that direction when this is True.
     news_chase_block: bool = False
     news_chase_direction: str = ""  # "long" | "short" | ""
+    # Price-shock: populated by orchestrator after compute_price_shock_signals()
+    price_shock_active: bool = False
+    price_shock_block_until: datetime | None = None
 
 
 class LessonCheckInput(BaseModel):

@@ -64,6 +64,20 @@ class AppSettings(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+class PriceShockSettings(BaseModel):
+    min_signals_to_trigger: int = 2
+    extreme_5m_return_pct: float = 2.5
+    block_minutes: int = 30
+    price_1m_return_pct: float = 0.5
+    price_5m_return_pct: float = 1.0
+    atr_spike_multiple: float = 2.0
+    volume_spike_multiple: float = 3.0
+    spread_spike_pct: float = 0.3
+    liquidation_spike_multiple: float = 5.0
+    open_position_risk_cut_pct: float = 50.0
+    move_sl_to_breakeven_on_favorable_shock: bool = True
+
+
 class RiskSettings(BaseModel):
     mode_default: str = "paper"
     max_margin_per_trade_usd: float
@@ -98,6 +112,7 @@ class RiskSettings(BaseModel):
     min_confluence_score: int = 3
     allowed_symbols: list[str] = []
     total_llm_budget_usd_per_day: float = 5.0
+    price_shock: PriceShockSettings = PriceShockSettings()
 
     @model_validator(mode="after")
     def _cross_validate(self) -> RiskSettings:

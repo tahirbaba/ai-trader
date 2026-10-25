@@ -168,7 +168,7 @@ class NewsCollector:
             )
 
         for entry in feed.entries:
-            source = feed._source_label  # type: ignore[attr-defined]
+            source = feed._source_label
             link: str = getattr(entry, "link", "") or ""
             published_parsed = getattr(entry, "published_parsed", None)
             published_iso = _parsed_to_iso(published_parsed)
@@ -186,7 +186,9 @@ class NewsCollector:
             ts_published: datetime.datetime
             if published_parsed:
                 try:
-                    ts_published = datetime.datetime(*published_parsed[:6], tzinfo=datetime.UTC)
+                    ts_published = datetime.datetime(*published_parsed[:6]).replace(
+                        tzinfo=datetime.UTC
+                    )
                 except Exception:  # noqa: BLE001
                     ts_published = now
             else:
@@ -232,7 +234,7 @@ class NewsCollector:
                 resp.raise_for_status()
                 feed = feedparser.parse(resp.content)
                 # Attach source label so the caller knows which feed was used
-                feed._source_label = source_label  # type: ignore[attr-defined]
+                feed._source_label = source_label
                 # Treat bozo (malformed feed) as a non-fatal warning
                 if getattr(feed, "bozo", False):
                     logger.warning(
@@ -320,5 +322,5 @@ def compute_news_chase_block(
 
     # Block the direction of the move.
     if price_delta > 0:
-        return True, "long"   # price surged; block new longs
-    return True, "short"      # price fell; block new shorts
+        return True, "long"  # price surged; block new longs
+    return True, "short"  # price fell; block new shorts

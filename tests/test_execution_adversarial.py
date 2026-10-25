@@ -130,11 +130,13 @@ def engine():
 def session_factory(engine):
     def _factory():
         return Session(engine, autocommit=False, autoflush=True)
+
     return _factory
 
 
-def _mock_broker(*, lot_size: float = 1.0, taker_fee: float = TAKER,
-                 max_leverage: float = MAX_LEVERAGE) -> MagicMock:
+def _mock_broker(
+    *, lot_size: float = 1.0, taker_fee: float = TAKER, max_leverage: float = MAX_LEVERAGE
+) -> MagicMock:
     broker = MagicMock()
     broker.get_market_meta.return_value = {
         "lot_size": lot_size,
@@ -170,8 +172,7 @@ class TestBypass1MarginAndLossCaps:
         entry=st.floats(min_value=0.01, max_value=10_000.0),
         stop_pct=st.floats(min_value=0.001, max_value=0.5),
     )
-    @h_settings(max_examples=400, deadline=None,
-                suppress_health_check=[HealthCheck.too_slow])
+    @h_settings(max_examples=400, deadline=None, suppress_health_check=[HealthCheck.too_slow])
     def test_layer2_always_catches_margin_breach(
         self, qty: float, entry: float, stop_pct: float
     ) -> None:
@@ -208,8 +209,7 @@ class TestBypass1MarginAndLossCaps:
         entry=st.floats(min_value=0.01, max_value=10_000.0),
         stop_pct=st.floats(min_value=0.001, max_value=0.5),
     )
-    @h_settings(max_examples=400, deadline=None,
-                suppress_health_check=[HealthCheck.too_slow])
+    @h_settings(max_examples=400, deadline=None, suppress_health_check=[HealthCheck.too_slow])
     def test_layer2_always_catches_loss_breach(
         self, qty: float, entry: float, stop_pct: float
     ) -> None:
@@ -295,7 +295,7 @@ class TestBypass2NoStopLoss:
             symbol="XRP/USDT:USDT",
             side="long",
             entry_price=1.0,
-            stop_loss=0.0,   # explicitly zero
+            stop_loss=0.0,  # explicitly zero
             take_profit=1.20,
             confidence=0.85,
             confluence_score=4,
@@ -317,7 +317,7 @@ class TestBypass2NoStopLoss:
                 side="long",
                 qty=1.0,
                 entry_price=1.0,
-                stop_price=1.0,   # stop == entry → zero distance
+                stop_price=1.0,  # stop == entry → zero distance
                 lot_size=1.0,
                 max_leverage=float(MAX_LEVERAGE),
                 max_margin_usd=MAX_MARGIN_USD,
@@ -329,6 +329,7 @@ class TestBypass2NoStopLoss:
     def test_negative_stop_loss_rejected_by_pydantic(self) -> None:
         """Pydantic ge=0 on stop_loss rejects negative values before any logic runs."""
         from pydantic import ValidationError
+
         with pytest.raises(ValidationError):
             DecisionInput(
                 action="LONG",
@@ -357,8 +358,7 @@ class TestBypass3LiqInsideStopBuffer:
         entry=st.floats(min_value=0.1, max_value=1000.0),
         stop_pct=st.floats(min_value=0.001, max_value=0.3),
     )
-    @h_settings(max_examples=300, deadline=None,
-                suppress_health_check=[HealthCheck.too_slow])
+    @h_settings(max_examples=300, deadline=None, suppress_health_check=[HealthCheck.too_slow])
     def test_layer2_accepts_only_positive_stop_distance(
         self, entry: float, stop_pct: float
     ) -> None:
@@ -419,9 +419,7 @@ class TestBypass4KillSwitch:
     """After SL placement failure, OrderManager must activate the kill switch.
     The kill switch must be stored in DSOR even if the SlPlacementError propagates."""
 
-    def test_sl_failure_activates_kill_switch_in_dsor(
-        self, session_factory
-    ) -> None:
+    def test_sl_failure_activates_kill_switch_in_dsor(self, session_factory) -> None:
         """E3: SlPlacementError from broker -> kill switch set + HALT event recorded."""
         broker = _mock_broker()
         broker.place_order.side_effect = SlPlacementError(
@@ -442,6 +440,7 @@ class TestBypass4KillSwitch:
 
         # Kill switch must be in DSOR
         from trader.dsor.system_state import SystemStateHelper
+
         sess = session_factory()
         assert SystemStateHelper(sess).is_kill_switch_on() is True
 
@@ -449,9 +448,7 @@ class TestBypass4KillSwitch:
         events = sess.query(RiskEvent).all()
         assert any(e.type == "HALT" for e in events)
 
-    def test_sl_failure_close_also_failed_records_halt_close_failed(
-        self, session_factory
-    ) -> None:
+    def test_sl_failure_close_also_failed_records_halt_close_failed(self, session_factory) -> None:
         """E7: close_failed=True also generates HALT_CLOSE_FAILED event."""
         broker = _mock_broker()
         broker.place_order.side_effect = SlPlacementError(
@@ -475,9 +472,9 @@ class TestBypass4KillSwitch:
         sess = session_factory()
         events = sess.query(RiskEvent).all()
         event_types = {e.type for e in events}
-        assert "HALT_CLOSE_FAILED" in event_types, (
-            "HALT_CLOSE_FAILED event was not recorded when close also failed"
-        )
+        assert (
+            "HALT_CLOSE_FAILED" in event_types
+        ), "HALT_CLOSE_FAILED event was not recorded when close also failed"
         assert "HALT" in event_types
 
     def test_kill_switch_db_failure_does_not_swallow_sl_error(self) -> None:
@@ -515,9 +512,7 @@ class TestBypass4KillSwitch:
 class TestBypass5DailyWeeklyLossLimits:
     """A rejected RiskVerdict (approved=False) must never reach the broker."""
 
-    def test_rejected_verdict_returns_failed_order_result(
-        self, session_factory
-    ) -> None:
+    def test_rejected_verdict_returns_failed_order_result(self, session_factory) -> None:
         """approved=False verdict produces OrderResult(status='failed') before broker call."""
         broker = _mock_broker()
         om = OrderManager(
@@ -543,13 +538,18 @@ class TestBypass5DailyWeeklyLossLimits:
         broker.place_order.assert_not_called()
 
     @given(
-        rule=st.sampled_from([
-            "DAILY_LOSS_LIMIT", "WEEKLY_LOSS_LIMIT", "KILL_SWITCH",
-            "LESSON_FILTER_BLOCK", "CONSECUTIVE_LOSSES", "LOW_CONFIDENCE",
-        ]),
+        rule=st.sampled_from(
+            [
+                "DAILY_LOSS_LIMIT",
+                "WEEKLY_LOSS_LIMIT",
+                "KILL_SWITCH",
+                "LESSON_FILTER_BLOCK",
+                "CONSECUTIVE_LOSSES",
+                "LOW_CONFIDENCE",
+            ]
+        ),
     )
-    @h_settings(max_examples=100, deadline=None,
-                suppress_health_check=[HealthCheck.too_slow])
+    @h_settings(max_examples=100, deadline=None, suppress_health_check=[HealthCheck.too_slow])
     def test_rejected_verdict_never_reaches_broker(self, rule: str) -> None:
         """Property: any rejected verdict (any rule) -> broker.place_order never called."""
         broker = _mock_broker()
@@ -583,6 +583,7 @@ class TestBypass6ParseFailure:
     def test_nan_entry_price_rejected_by_decision_model(self) -> None:
         """NaN entry_price raises ValidationError before it can reach OrderManager."""
         from pydantic import ValidationError
+
         with pytest.raises(ValidationError):
             DecisionInput(
                 action="LONG",
@@ -598,6 +599,7 @@ class TestBypass6ParseFailure:
     def test_inf_entry_price_rejected_by_decision_model(self) -> None:
         """Inf entry_price raises ValidationError."""
         from pydantic import ValidationError
+
         with pytest.raises(ValidationError):
             DecisionInput(
                 action="LONG",
@@ -610,9 +612,7 @@ class TestBypass6ParseFailure:
                 confluence_score=4,
             )
 
-    def test_none_adjusted_size_in_verdict_returns_failed(
-        self, session_factory
-    ) -> None:
+    def test_none_adjusted_size_in_verdict_returns_failed(self, session_factory) -> None:
         """adjusted_size=None in an approved verdict -> OrderResult(status='failed')."""
         broker = _mock_broker()
         om = OrderManager(
@@ -622,7 +622,7 @@ class TestBypass6ParseFailure:
         )
         verdict = RiskVerdict(
             approved=True,
-            adjusted_size=None,   # malformed — parse-like failure
+            adjusted_size=None,  # malformed — parse-like failure
             rules_failed=[],
             loss_at_stop_usd=None,
             liq_price=None,
@@ -634,9 +634,7 @@ class TestBypass6ParseFailure:
         assert result.error is not None
         broker.place_order.assert_not_called()
 
-    def test_zero_adjusted_size_in_verdict_returns_failed(
-        self, session_factory
-    ) -> None:
+    def test_zero_adjusted_size_in_verdict_returns_failed(self, session_factory) -> None:
         """adjusted_size=0 in approved verdict -> OrderResult(status='failed')."""
         broker = _mock_broker()
         om = OrderManager(
@@ -657,9 +655,7 @@ class TestBypass6ParseFailure:
         assert result.status == "failed"
         broker.place_order.assert_not_called()
 
-    def test_negative_adjusted_size_in_verdict_returns_failed(
-        self, session_factory
-    ) -> None:
+    def test_negative_adjusted_size_in_verdict_returns_failed(self, session_factory) -> None:
         """adjusted_size<0 must be caught by the qty<=0 guard in OrderManager."""
         broker = _mock_broker()
         om = OrderManager(
@@ -692,9 +688,7 @@ class TestBypass7LessonFilterBlock:
     """A LessonFilter block manifests as approved=False from the gate.
     Execution must never promote a rejected verdict."""
 
-    def test_lesson_blocked_verdict_never_reaches_broker(
-        self, session_factory
-    ) -> None:
+    def test_lesson_blocked_verdict_never_reaches_broker(self, session_factory) -> None:
         """A verdict with rules_failed=['LESSON_FILTER_BLOCK'] is a rejected verdict."""
         broker = _mock_broker()
         om = OrderManager(
@@ -772,9 +766,7 @@ class TestE1SlPlacementFailurePath:
     """When entry is already filled and SL fails, LiveAdapter must attempt
     a market close (reduce_only=True), not cancel the filled entry order."""
 
-    def test_filled_entry_sl_failure_tries_market_close_not_cancel(
-        self, tmp_path: Path
-    ) -> None:
+    def test_filled_entry_sl_failure_tries_market_close_not_cancel(self, tmp_path: Path) -> None:
         """E1: filled entry + SL failure -> create_order(market, reduceOnly=True),
         cancel_order must NOT be called."""
         from trader.execution.live_adapter import LiveAdapter
@@ -827,13 +819,13 @@ class TestE1SlPlacementFailurePath:
                 client_order_id="test-e1",
             )
 
-        assert exc_info.value.close_failed is False, (
-            "close_failed must be False when market close succeeded"
-        )
+        assert (
+            exc_info.value.close_failed is False
+        ), "close_failed must be False when market close succeeded"
         # 3 calls: entry, failed SL, market close
-        assert mock_exchange.create_order.call_count == 3, (
-            f"Expected 3 create_order calls, got {mock_exchange.create_order.call_count}"
-        )
+        assert (
+            mock_exchange.create_order.call_count == 3
+        ), f"Expected 3 create_order calls, got {mock_exchange.create_order.call_count}"
         # The third call must be a market order with reduceOnly=True
         third_call_args = mock_exchange.create_order.call_args_list[2]
         args, kwargs = third_call_args
@@ -841,15 +833,11 @@ class TestE1SlPlacementFailurePath:
         assert args[1] == "market", f"Expected 'market' order type for close, got {args[1]}"
         assert args[2] == "sell", f"Expected 'sell' (counter-side for buy entry), got {args[2]}"
         close_params = args[5] if len(args) > 5 else kwargs.get("params", {})
-        assert close_params.get("reduceOnly") is True, (
-            "Market close must have reduceOnly=True"
-        )
+        assert close_params.get("reduceOnly") is True, "Market close must have reduceOnly=True"
         # cancel_order must NOT be called on a filled entry
         mock_exchange.cancel_order.assert_not_called()
 
-    def test_unfilled_entry_sl_failure_cancels_entry_no_market_close(
-        self, tmp_path: Path
-    ) -> None:
+    def test_unfilled_entry_sl_failure_cancels_entry_no_market_close(self, tmp_path: Path) -> None:
         """E1 (unfilled): open/unfilled entry + SL failure -> cancel_order, no market close."""
         from trader.execution.live_adapter import LiveAdapter
 
@@ -907,9 +895,7 @@ class TestE2SlNoDoublePlacement:
     """If the entry response confirms the SL via stopLossPrice/stopLoss,
     no separate SL order should be placed and fetch_open_orders is not called."""
 
-    def test_sl_confirmed_in_response_no_second_create_order(
-        self, tmp_path: Path
-    ) -> None:
+    def test_sl_confirmed_in_response_no_second_create_order(self, tmp_path: Path) -> None:
         """E2: stopLossPrice in entry response -> create_order called exactly once."""
         from trader.execution.live_adapter import LiveAdapter
 
@@ -929,7 +915,7 @@ class TestE2SlNoDoublePlacement:
             "status": "closed",
             "filled": 1.0,
             "average": 1.0,
-            "stopLossPrice": 0.90,   # SL confirmed in response
+            "stopLossPrice": 0.90,  # SL confirmed in response
         }
         mock_ccxt = MagicMock()
         mock_ccxt.bybit.return_value = mock_exchange
@@ -964,9 +950,7 @@ class TestE4UnprotectedPosition:
       - re-raise SlPlacementError so no caller silently continues
     """
 
-    def test_unprotected_position_activates_kill_switch_and_raises(
-        self, session_factory
-    ) -> None:
+    def test_unprotected_position_activates_kill_switch_and_raises(self, session_factory) -> None:
         """E4: SL + close both fail -> kill switch ON, SlPlacementError raised."""
         broker = _mock_broker()
         broker.place_order.side_effect = SlPlacementError(
@@ -990,6 +974,7 @@ class TestE4UnprotectedPosition:
         assert exc_info.value.close_failed is True
 
         from trader.dsor.system_state import SystemStateHelper
+
         sess = session_factory()
         assert SystemStateHelper(sess).is_kill_switch_on() is True
 
@@ -1108,15 +1093,15 @@ class TestE10E11PaperBrokerSlSafety:
             qty=5.0,
             order_type="market",
             reduce_only=True,
-            stop_loss=0.80,   # should NOT overwrite position SL
+            stop_loss=0.80,  # should NOT overwrite position SL
             client_order_id="partial-close",
         )
 
         remaining = broker._positions.get("XRP/USDT:USDT")
         assert remaining is not None, "Partial close removed entire position"
-        assert remaining["sl_price"] == 0.90, (
-            f"reduce_only fill must not update sl_price. Got {remaining['sl_price']}"
-        )
+        assert (
+            remaining["sl_price"] == 0.90
+        ), f"reduce_only fill must not update sl_price. Got {remaining['sl_price']}"
 
     def test_sl_triggered_closes_position_fully(self) -> None:
         """E10: SL trigger closes the position completely via update_mark_price."""
@@ -1136,9 +1121,7 @@ class TestE10E11PaperBrokerSlSafety:
         # Push price to or below SL
         fills = broker.update_mark_price("XRP/USDT:USDT", 0.89)
         assert len(fills) >= 1, "Expected at least one fill (SL trigger)"
-        assert "XRP/USDT:USDT" not in broker._positions, (
-            "Position must be closed after SL trigger"
-        )
+        assert "XRP/USDT:USDT" not in broker._positions, "Position must be closed after SL trigger"
 
 
 # ===========================================================================
@@ -1150,9 +1133,7 @@ class TestE12SlVerificationFailure:
     """After placing a separate SL order, if fetch_open_orders does not confirm
     a stop/reduce_only order, SlPlacementError must be raised."""
 
-    def test_sl_verification_failure_raises_sl_placement_error(
-        self, tmp_path: Path
-    ) -> None:
+    def test_sl_verification_failure_raises_sl_placement_error(self, tmp_path: Path) -> None:
         """E12: separate SL placed but not confirmed by fetch_open_orders -> error."""
         from trader.execution.live_adapter import LiveAdapter
 
@@ -1237,9 +1218,7 @@ class TestE9StopLossZeroSendsNoneToBroker:
         )
         # This mirrors the conditional on line 148
         sl_arg = decision.stop_loss if decision.stop_loss > 0 else None
-        assert sl_arg is None, (
-            "stop_loss=0 must produce None when passed to broker, not 0.0"
-        )
+        assert sl_arg is None, "stop_loss=0 must produce None when passed to broker, not 0.0"
 
 
 # ===========================================================================
@@ -1251,9 +1230,7 @@ class TestLiveAdapterApprovalGuard:
     """LiveAdapter construction must fail if approval file is absent or
     trading_mode != 'live'."""
 
-    def test_no_approval_file_raises_live_not_approved(
-        self, tmp_path: Path
-    ) -> None:
+    def test_no_approval_file_raises_live_not_approved(self, tmp_path: Path) -> None:
         from trader.execution.exceptions import LiveNotApprovedError
         from trader.execution.live_adapter import LiveAdapter
 
@@ -1265,9 +1242,7 @@ class TestLiveAdapterApprovalGuard:
         with pytest.raises(LiveNotApprovedError):
             LiveAdapter(settings, approval_path=non_existent)
 
-    def test_paper_mode_raises_live_not_approved_even_with_file(
-        self, tmp_path: Path
-    ) -> None:
+    def test_paper_mode_raises_live_not_approved_even_with_file(self, tmp_path: Path) -> None:
         """trading_mode=paper + approval file present -> still raises LiveNotApprovedError."""
         from trader.execution.exceptions import LiveNotApprovedError
         from trader.execution.live_adapter import LiveAdapter
@@ -1275,7 +1250,7 @@ class TestLiveAdapterApprovalGuard:
         approval = tmp_path / "live_approval.yaml"
         approval.write_text("approved: true\n")
         settings = MagicMock()
-        settings.trading_mode = "paper"   # wrong mode
+        settings.trading_mode = "paper"  # wrong mode
 
         with pytest.raises(LiveNotApprovedError):
             LiveAdapter(settings, approval_path=approval)

@@ -198,7 +198,7 @@ class TestPaperBrokerRealSymbolsTp:
 
 class TestRiskGateRealSymbols:
     _KNOWN_VERDICTS = {
-        True,   # approved
+        True,  # approved
         False,  # rejected — any known rule
     }
 
@@ -235,7 +235,9 @@ class TestRiskGateRealSymbols:
         """RiskGate rejects a symbol that is not in allowed_symbols."""
         # Intentionally exclude the symbol under test
         other_symbols = [s for s in _REAL_SYMBOLS if s != symbol]
-        settings = make_settings(allowed_symbols=other_symbols if other_symbols else ["BTC/USDT:USDT"])
+        settings = make_settings(
+            allowed_symbols=other_symbols if other_symbols else ["BTC/USDT:USDT"]
+        )
         price = _PRICES[symbol]
 
         gate = RiskGate(settings=settings)

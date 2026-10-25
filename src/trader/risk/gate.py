@@ -55,12 +55,14 @@ class RiskGate:
         settings: Settings,
         live_approval_path: Path | None = None,
         kill_switch_on: bool = False,
+        exchange_sl_capable: bool = True,
     ) -> None:
         self._settings = settings
         self._risk = settings.risk
         self._trading_mode = settings.trading_mode
         self._live_approval_path = live_approval_path or _LIVE_APPROVAL_PATH
         self._kill_switch_on = kill_switch_on
+        self._exchange_sl_capable = exchange_sl_capable
 
     def evaluate(
         self,
@@ -152,11 +154,29 @@ class RiskGate:
         # 10b. news_no_chase — block when price already moved post-high-impact news
         # ------------------------------------------------------------------ #
         if market.news_chase_block:
-            # Block only if the proposed entry is in the same direction as the chase.
             entry_side = decision.side.lower()
             chase_side = market.news_chase_direction.lower()
             if chase_side == "" or entry_side == chase_side:
                 return self._reject("NEWS_NO_CHASE", rules_failed)
+
+        # ------------------------------------------------------------------ #
+        # 10c. price_shock — block while shock_until window is active
+        # ------------------------------------------------------------------ #
+        if market.price_shock_active:
+            block_until = market.price_shock_block_until
+            if block_until is not None:
+                if block_until.tzinfo is None:
+                    block_until = block_until.replace(tzinfo=datetime.UTC)
+                if datetime.datetime.now(datetime.UTC) < block_until:
+                    return self._reject("PRICE_SHOCK", rules_failed)
+            else:
+                return self._reject("PRICE_SHOCK", rules_failed)
+
+        # ------------------------------------------------------------------ #
+        # 10d. exchange_sl_required — reject if adapter cannot attach/verify exchange SL
+        # ------------------------------------------------------------------ #
+        if self._risk.require_exchange_side_sl_tp and not self._exchange_sl_capable:
+            return self._reject("EXCHANGE_SL_NOT_CAPABLE", rules_failed)
 
         # ------------------------------------------------------------------ #
         # 11. equity_floor
