@@ -13,6 +13,8 @@ from __future__ import annotations
 import datetime
 from pathlib import Path
 
+import pytest
+
 from trader.config.settings import AppSettings, ModelNames, RiskSettings, Settings
 from trader.risk.gate import RiskGate
 from trader.risk.models import (
@@ -867,16 +869,16 @@ def test_entry_drift_within_limit_passes():
     assert "ENTRY_DRIFT" not in verdict.rules_failed
 
 
-def test_snapshot_price_zero_no_drift():
-    """snapshot_price=0 → drift defaults to 0 (no ENTRY_DRIFT rejection)."""
-    gate = _make_gate()
-    verdict = gate.evaluate(
-        decision=_make_decision(),
-        lesson_check=_make_lesson_check(),
-        account=_make_account(),
-        market=_make_market(snapshot_price=0.0, live_price=0.5, atr_14=None),
-    )
-    assert "ENTRY_DRIFT" not in verdict.rules_failed
+def test_snapshot_price_zero_rejected_by_model():
+    """snapshot_price=0 is now rejected by MarketState Pydantic validation (gt=0).
+
+    Previously the gate silently skipped the drift check; now the model prevents
+    a zero price from ever reaching the gate.
+    """
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        _make_market(snapshot_price=0.0, live_price=0.5, atr_14=None)
 
 
 # ------------------------------------------------------------------

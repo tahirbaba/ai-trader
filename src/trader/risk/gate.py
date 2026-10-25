@@ -177,7 +177,7 @@ class RiskGate:
         # ------------------------------------------------------------------ #
         if account.last_loss_ts is not None:
             cooldown_delta = datetime.timedelta(minutes=self._risk.cooldown_after_loss_minutes)
-            now_utc = datetime.datetime.utcnow().replace(tzinfo=datetime.UTC)
+            now_utc = datetime.datetime.now(datetime.UTC).replace(tzinfo=datetime.UTC)
             last_loss = account.last_loss_ts
             # Normalise to UTC-aware if naive
             if last_loss.tzinfo is None:
@@ -223,7 +223,7 @@ class RiskGate:
         entry = decision.entry_price
         stop = decision.stop_loss
 
-        if stop == 0:
+        if stop <= 0:
             return self._reject("MISSING_STOP_LOSS", rules_failed)
         if side_lower == "long" and stop >= entry:
             return self._reject("MISSING_STOP_LOSS", rules_failed)
@@ -247,7 +247,7 @@ class RiskGate:
             next_ts = market.next_funding_ts
             if next_ts.tzinfo is None:
                 next_ts = next_ts.replace(tzinfo=datetime.UTC)
-            now_utc = datetime.datetime.utcnow().replace(tzinfo=datetime.UTC)
+            now_utc = datetime.datetime.now(datetime.UTC).replace(tzinfo=datetime.UTC)
             funding_window = datetime.timedelta(minutes=self._risk.avoid_funding_window_minutes)
             within_window = abs(next_ts - now_utc) <= funding_window
             # Funding is "against" the position:
@@ -280,7 +280,7 @@ class RiskGate:
                 max_leverage=float(self._risk.max_leverage),
                 slippage_buffer_pct=self._risk.slippage_buffer_pct,
             )
-        except SizingError as exc:
+        except (SizingError, ValueError, ZeroDivisionError, OverflowError) as exc:
             logger.warning("RiskGate: sizing failed: %s", exc)
             return self._reject("SIZING_FAILED", rules_failed)
 
@@ -317,10 +317,7 @@ class RiskGate:
         # ------------------------------------------------------------------ #
         # 27. entry_drift — price has moved too far since brain snapshot
         # ------------------------------------------------------------------ #
-        if market.snapshot_price > 0:
-            drift = abs(market.live_price - market.snapshot_price) / market.snapshot_price
-        else:
-            drift = 0.0
+        drift = abs(market.live_price - market.snapshot_price) / market.snapshot_price
         entry_drift_pct = drift
         if drift > self._risk.max_entry_drift_pct:
             return RiskVerdict(
