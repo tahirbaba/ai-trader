@@ -83,7 +83,7 @@ class LiveAdapter(ExchangeAdapter):
             positions = self._exchange.fetch_positions()
             result = []
             for p in positions:
-                if p.get("contracts", 0) == 0:
+                if not p.get("contracts"):  # covers both 0 and None
                     continue
                 result.append(
                     {
@@ -208,19 +208,34 @@ class LiveAdapter(ExchangeAdapter):
                     close_failed=close_failed,
                 ) from sl_exc
 
-            # SL placed separately — verify it actually exists as a conditional order.
+            # SL placed separately — verify it exists as a matching conditional order.
+            # Check: type, reduceOnly, side, stopPrice (within 0.1%), and qty (within 0.1%).
             try:
                 open_orders = self._exchange.fetch_open_orders(symbol)
             except Exception:
                 open_orders = []
             sl_types = {"stop", "stop_market", "stop_limit"}
-            sl_verified = any(
-                o.get("type") in sl_types and o.get("reduceOnly", False) for o in open_orders
-            )
+            sl_side = "sell" if side == "buy" else "buy"
+            sl_verified = False
+            for o in open_orders:
+                if o.get("type") not in sl_types:
+                    continue
+                if not o.get("reduceOnly", False):
+                    continue
+                if o.get("side", "").lower() != sl_side:
+                    continue
+                order_stop = float(o.get("stopPrice") or o.get("price") or 0.0)
+                if order_stop > 0 and abs(order_stop - stop_loss) / stop_loss > 0.001:
+                    continue
+                order_qty = float(o.get("amount") or o.get("qty") or 0.0)
+                if order_qty > 0 and abs(order_qty - qty) / qty > 0.001:
+                    continue
+                sl_verified = True
+                break
             if not sl_verified:
                 raise SlPlacementError(
-                    f"SL verification failed: no stop/reduce_only order found for "
-                    f"entry {exchange_order_id}",
+                    f"SL verification failed: no matching stop/reduceOnly order for "
+                    f"entry {exchange_order_id} (sl={stop_loss}, qty={qty})",
                     order_id=exchange_order_id,
                 )
 

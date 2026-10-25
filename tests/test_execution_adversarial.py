@@ -27,13 +27,13 @@ Plus execution-specific paths:
 
 from __future__ import annotations
 
-import datetime
 import math
 from pathlib import Path
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
-from hypothesis import HealthCheck, given, settings as h_settings
+from hypothesis import HealthCheck, given
+from hypothesis import settings as h_settings
 from hypothesis import strategies as st
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
@@ -41,7 +41,7 @@ from sqlalchemy.orm import Session
 from trader.config.settings import AppSettings, ModelNames, RiskSettings, Settings
 from trader.dsor.base import Base
 from trader.dsor.models import RiskEvent
-from trader.execution.exceptions import AdapterError, DuplicateOrderError, SlPlacementError
+from trader.execution.exceptions import SlPlacementError
 from trader.execution.layer2_check import CapBreachError, layer2_cap_check
 from trader.execution.order_manager import OrderManager
 from trader.execution.paper_broker import PaperBroker

@@ -306,7 +306,10 @@ class OrderManager:
             )
 
         pos = positions[0]
-        broker_side = "sell" if pos["side"] == "buy" else "buy"
+        # Normalise side: ccxt returns "long"/"short" for live, PaperBroker uses "buy"/"sell"
+        raw_side = pos["side"].lower()
+        is_long = raw_side in {"buy", "long"}
+        broker_side = "sell" if is_long else "buy"
         qty = pos["qty"]
         client_order_id = f"force-close-{uuid.uuid4().hex[:8]}"
 
@@ -319,8 +322,8 @@ class OrderManager:
                 reduce_only=True,
                 client_order_id=client_order_id,
             )
-        except AdapterError as exc:
-            # Best-effort: log and return failed
+        except Exception as exc:
+            # Best-effort: log and return failed regardless of exception type
             logger.error("force_close broker call failed: %s", exc)
             self._record_risk_event("FORCE_CLOSE_FAILED", f"{reason}: {exc}")
             return OrderResult(
@@ -357,7 +360,8 @@ class OrderManager:
             SystemStateHelper(session).set_kill_switch(True)
             session.commit()
         except Exception as exc:
-            logger.error("Failed to set kill switch: %s", exc)
+            # CRITICAL: kill switch not persisted — system may resume trading after restart
+            logger.critical("KILL_SWITCH_PERSIST_FAILED — DB unavailable: %s", exc)
 
     def _record_risk_event(self, event_type: str, details: str) -> None:
         """Write a RiskEvent row to DSOR."""
@@ -371,4 +375,10 @@ class OrderManager:
             session.add(event)
             session.commit()
         except Exception as exc:
-            logger.error("Failed to record risk event %s: %s", event_type, exc)
+            # CRITICAL: audit trail lost — emit at CRITICAL level so structured logging captures it
+            logger.critical(
+                "RISK_EVENT_PERSIST_FAILED event_type=%s details=%r db_error=%s",
+                event_type,
+                details,
+                exc,
+            )
