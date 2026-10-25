@@ -13,7 +13,6 @@ Covers seven bypass hypotheses:
 from __future__ import annotations
 
 import datetime
-import logging
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -37,10 +36,10 @@ from trader.risk.models import (
 )
 from trader.risk.price_shock import compute_shock_sl_amendment
 
-
 # ---------------------------------------------------------------------------
 # Shared builders
 # ---------------------------------------------------------------------------
+
 
 def _make_settings(require_exchange_sl: bool = True) -> Settings:
     risk = RiskSettings(
@@ -145,6 +144,7 @@ def _make_lesson() -> LessonCheckInput:
 # 1. PRICE_SHOCK: expired block_until with active=True must NOT block
 # ---------------------------------------------------------------------------
 
+
 @given(
     seconds_ago=st.floats(min_value=1.0, max_value=86400.0),
 )
@@ -155,14 +155,15 @@ def test_price_shock_expired_window_never_blocks(seconds_ago: float) -> None:
     block_until = datetime.datetime.now(datetime.UTC) - datetime.timedelta(seconds=seconds_ago)
     market = _make_market(price_shock_active=True, price_shock_block_until=block_until)
     verdict = gate.evaluate(_make_decision(), _make_lesson(), _make_account(), market)
-    assert "PRICE_SHOCK" not in verdict.rules_failed, (
-        f"PRICE_SHOCK fired for expired block_until ({seconds_ago}s ago)"
-    )
+    assert (
+        "PRICE_SHOCK" not in verdict.rules_failed
+    ), f"PRICE_SHOCK fired for expired block_until ({seconds_ago}s ago)"
 
 
 # ---------------------------------------------------------------------------
 # 2. PRICE_SHOCK: active=True + block_until=None must ALWAYS reject
 # ---------------------------------------------------------------------------
+
 
 def test_price_shock_active_no_until_always_rejects() -> None:
     """Invariant: active=True with no block_until timestamp is always rejected."""
@@ -198,14 +199,13 @@ def test_price_shock_active_no_until_always_rejects_property(
 # 3. EXCHANGE_SL_NOT_CAPABLE: require=False never fires the rule
 # ---------------------------------------------------------------------------
 
+
 @given(
     entry=st.floats(min_value=0.1, max_value=100.0),
     stop_pct=st.floats(min_value=0.02, max_value=0.2),
 )
 @settings(max_examples=200, deadline=None, suppress_health_check=[HealthCheck.too_slow])
-def test_exchange_sl_not_capable_not_fired_when_not_required(
-    entry: float, stop_pct: float
-) -> None:
+def test_exchange_sl_not_capable_not_fired_when_not_required(entry: float, stop_pct: float) -> None:
     """When require_exchange_side_sl_tp=False, EXCHANGE_SL_NOT_CAPABLE must never fire
     regardless of exchange_sl_capable value."""
     gate = RiskGate(
@@ -221,9 +221,9 @@ def test_exchange_sl_not_capable_not_fired_when_not_required(
     decision = _make_decision(entry_price=entry, stop_loss=stop, take_profit=tp)
     market = _make_market(live_price=entry, snapshot_price=entry)
     verdict = gate.evaluate(decision, _make_lesson(), _make_account(), market)
-    assert "EXCHANGE_SL_NOT_CAPABLE" not in verdict.rules_failed, (
-        "EXCHANGE_SL_NOT_CAPABLE fired even though require_exchange_side_sl_tp=False"
-    )
+    assert (
+        "EXCHANGE_SL_NOT_CAPABLE" not in verdict.rules_failed
+    ), "EXCHANGE_SL_NOT_CAPABLE fired even though require_exchange_side_sl_tp=False"
 
 
 def test_exchange_sl_not_capable_fires_when_required() -> None:
@@ -243,6 +243,7 @@ def test_exchange_sl_not_capable_fires_when_required() -> None:
 # 4. reconcile() kill-switch: double-mismatch is idempotent
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture()
 def mem_engine():
     eng = create_engine("sqlite:///:memory:", echo=False)
@@ -255,6 +256,7 @@ def mem_engine():
 def mem_session_factory(mem_engine):
     def _factory():
         return Session(mem_engine, autocommit=False, autoflush=True)
+
     return _factory
 
 
@@ -292,9 +294,7 @@ def _inject_broker_position(broker: PaperBroker, symbol: str) -> None:
     }
 
 
-def test_reconcile_double_mismatch_kill_switch_idempotent(
-    mem_session_factory, mem_engine
-) -> None:
+def test_reconcile_double_mismatch_kill_switch_idempotent(mem_session_factory, mem_engine) -> None:
     """Two consecutive reconcile() mismatches result in kill_switch=True exactly once
     and must not raise any exception. The second call must be a no-op for the flag."""
     broker = PaperBroker(initial_balance=10_000.0)
@@ -319,6 +319,7 @@ def test_reconcile_double_mismatch_kill_switch_idempotent(
 # 5. reconcile() kill-switch: DB failure swallows exception, does not propagate
 # ---------------------------------------------------------------------------
 
+
 def test_reconcile_kill_switch_db_failure_no_exception(
     mem_session_factory, mem_engine, caplog
 ) -> None:
@@ -339,21 +340,25 @@ def test_reconcile_kill_switch_db_failure_no_exception(
         critical_calls.append(msg % args if args else msg)
         original_critical(msg, *args, **kwargs)
 
-    with patch(
-        "trader.dsor.system_state.SystemStateHelper.set_kill_switch",
-        side_effect=RuntimeError("DB gone"),
-    ), patch.object(om_mod.logger, "critical", side_effect=_capture_critical):
+    with (
+        patch(
+            "trader.dsor.system_state.SystemStateHelper.set_kill_switch",
+            side_effect=RuntimeError("DB gone"),
+        ),
+        patch.object(om_mod.logger, "critical", side_effect=_capture_critical),
+    ):
         result = om.reconcile("XRP/USDT:USDT")
 
     assert result.ok is False
-    assert any("KILL_SWITCH_PERSIST_FAILED" in msg for msg in critical_calls), (
-        f"Expected CRITICAL log for KILL_SWITCH_PERSIST_FAILED; got: {critical_calls}"
-    )
+    assert any(
+        "KILL_SWITCH_PERSIST_FAILED" in msg for msg in critical_calls
+    ), f"Expected CRITICAL log for KILL_SWITCH_PERSIST_FAILED; got: {critical_calls}"
 
 
 # ---------------------------------------------------------------------------
 # 6. compute_shock_sl_amendment edge cases
 # ---------------------------------------------------------------------------
+
 
 @given(
     entry=st.floats(min_value=1.0, max_value=1000.0),
@@ -373,9 +378,9 @@ def test_shock_sl_pct_zero_no_change(entry: float, sl_below_entry_pct: float) ->
         shock_is_adverse=True,
     )
     assert new_sl is not None
-    assert abs(new_sl - current_sl) < 1e-9, (
-        f"pct=0 adverse shock changed SL: entry={entry} sl={current_sl} new_sl={new_sl}"
-    )
+    assert (
+        abs(new_sl - current_sl) < 1e-9
+    ), f"pct=0 adverse shock changed SL: entry={entry} sl={current_sl} new_sl={new_sl}"
 
 
 @given(
@@ -383,9 +388,7 @@ def test_shock_sl_pct_zero_no_change(entry: float, sl_below_entry_pct: float) ->
     sl_below_entry_pct=st.floats(min_value=0.001, max_value=0.499),
 )
 @settings(max_examples=300, deadline=None, suppress_health_check=[HealthCheck.too_slow])
-def test_shock_sl_pct_100_never_crosses_entry_long(
-    entry: float, sl_below_entry_pct: float
-) -> None:
+def test_shock_sl_pct_100_never_crosses_entry_long(entry: float, sl_below_entry_pct: float) -> None:
     """With pct=100 for long, SL must be clamped strictly below entry."""
     current_sl = entry * (1.0 - sl_below_entry_pct)
     new_sl = compute_shock_sl_amendment(
@@ -398,9 +401,7 @@ def test_shock_sl_pct_100_never_crosses_entry_long(
         shock_is_adverse=True,
     )
     assert new_sl is not None
-    assert new_sl < entry, (
-        f"pct=100 adverse shock crossed entry: entry={entry} new_sl={new_sl}"
-    )
+    assert new_sl < entry, f"pct=100 adverse shock crossed entry: entry={entry} new_sl={new_sl}"
 
 
 @given(
@@ -423,9 +424,9 @@ def test_shock_sl_pct_100_never_crosses_entry_short(
         shock_is_adverse=True,
     )
     assert new_sl is not None
-    assert new_sl > entry, (
-        f"pct=100 adverse short shock crossed entry: entry={entry} new_sl={new_sl}"
-    )
+    assert (
+        new_sl > entry
+    ), f"pct=100 adverse short shock crossed entry: entry={entry} new_sl={new_sl}"
 
 
 def test_shock_sl_favorable_no_flag_returns_none() -> None:
@@ -446,9 +447,16 @@ def test_shock_sl_favorable_no_flag_returns_none() -> None:
 # 7. Case/whitespace bypass attempts
 # ---------------------------------------------------------------------------
 
-@pytest.mark.parametrize("action_variant", [
-    "long", "Long", "LONG", "lOnG",
-])
+
+@pytest.mark.parametrize(
+    "action_variant",
+    [
+        "long",
+        "Long",
+        "LONG",
+        "lOnG",
+    ],
+)
 def test_lowercase_action_does_not_bypass_action_filter(action_variant: str) -> None:
     """action.upper() normalisation means 'long'/'Long' are never treated as HOLD/NO_TRADE.
     They reach symbol_allowed and beyond (not short-circuited by action_filter)."""
@@ -485,14 +493,15 @@ def test_symbol_trailing_space_blocked() -> None:
     decision = _make_decision(symbol="XRP/USDT:USDT ")
     verdict = gate.evaluate(decision, _make_lesson(), _make_account(), _make_market())
     assert verdict.approved is False
-    assert "SYMBOL_NOT_ALLOWED" in verdict.rules_failed, (
-        "Trailing-space symbol bypassed SYMBOL_NOT_ALLOWED check"
-    )
+    assert (
+        "SYMBOL_NOT_ALLOWED" in verdict.rules_failed
+    ), "Trailing-space symbol bypassed SYMBOL_NOT_ALLOWED check"
 
 
 # ---------------------------------------------------------------------------
 # Kill-switch bypass: kill_switch_on=True must always reject regardless of input
 # ---------------------------------------------------------------------------
+
 
 @given(
     entry=st.floats(min_value=0.1, max_value=1000.0),
@@ -521,6 +530,7 @@ def test_kill_switch_always_rejects(entry: float, stop_pct: float) -> None:
 # LessonFilter block must never be bypassed
 # ---------------------------------------------------------------------------
 
+
 @given(
     blocked=st.just(True),
     penalty=st.floats(min_value=0.0, max_value=1.0),
@@ -538,6 +548,7 @@ def test_lesson_filter_block_always_rejects(blocked: bool, penalty: float) -> No
 # ---------------------------------------------------------------------------
 # Parse-failure safety: a rejected RiskVerdict must never be approved
 # ---------------------------------------------------------------------------
+
 
 def test_rejected_verdict_cannot_be_submitted_as_approved() -> None:
     """OrderManager.submit() must gate on verdict.approved, never on raw fields."""
@@ -563,6 +574,4 @@ def test_rejected_verdict_cannot_be_submitted_as_approved() -> None:
         reject_reason="PARSE_FAILURE_SIMULATED",
     )
     result = om.submit(bad_verdict, _make_decision(), cycle_id="test-cycle")
-    assert result.status == "failed", (
-        "OrderManager submitted an order despite approved=False"
-    )
+    assert result.status == "failed", "OrderManager submitted an order despite approved=False"

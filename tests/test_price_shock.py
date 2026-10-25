@@ -417,7 +417,9 @@ class TestIsShockActive:
         assert is_shock_active(None) is False
 
     def test_naive_dt_treated_as_utc(self):
-        future_naive = datetime.datetime.now(datetime.UTC).replace(tzinfo=None) + datetime.timedelta(minutes=10)
+        future_naive = datetime.datetime.now(datetime.UTC).replace(
+            tzinfo=None
+        ) + datetime.timedelta(minutes=10)
         assert is_shock_active(future_naive) is True
 
 
@@ -563,6 +565,7 @@ def om_engine():
 def om_session_factory(om_engine):
     def _factory():
         return Session(om_engine, autocommit=False, autoflush=True)
+
     return _factory
 
 
@@ -584,9 +587,7 @@ def _make_om_settings() -> Settings:
 
 
 class TestReconcileKillSwitch:
-    def test_reconcile_mismatch_sets_kill_switch(
-        self, om_session_factory, om_engine
-    ):
+    def test_reconcile_mismatch_sets_kill_switch(self, om_session_factory, om_engine):
         broker = PaperBroker(initial_balance=10_000.0)
         broker._mark_prices["XRP/USDT:USDT"] = 1.0
         # Inject a position into broker without corresponding DSOR order
@@ -614,12 +615,11 @@ class TestReconcileKillSwitch:
         # Verify kill switch is set in DSOR
         session = om_session_factory()
         from trader.dsor.system_state import SystemStateHelper
+
         helper = SystemStateHelper(session)
         assert helper.is_kill_switch_on() is True
 
-    def test_reconcile_mismatch_records_risk_event(
-        self, om_session_factory, om_engine
-    ):
+    def test_reconcile_mismatch_records_risk_event(self, om_session_factory, om_engine):
         broker = PaperBroker(initial_balance=10_000.0)
         broker._mark_prices["XRP/USDT:USDT"] = 1.0
         broker._positions["XRP/USDT:USDT"] = {
@@ -660,5 +660,6 @@ class TestReconcileKillSwitch:
 
         session = om_session_factory()
         from trader.dsor.system_state import SystemStateHelper
+
         helper = SystemStateHelper(session)
         assert helper.is_kill_switch_on() is False

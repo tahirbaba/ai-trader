@@ -105,7 +105,7 @@ class LlmClient:
                 model=resolved_model,
                 max_tokens=max_tokens,
                 system=system,
-                messages=messages,
+                messages=messages,  # type: ignore[arg-type]
                 timeout=timeout,
             )
 

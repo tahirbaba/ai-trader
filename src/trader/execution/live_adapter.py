@@ -92,6 +92,7 @@ class LiveAdapter(ExchangeAdapter):
                         "qty": float(p.get("contracts", 0)),
                         "entry_price": float(p.get("entryPrice") or 0),
                         "unrealised_pnl": float(p.get("unrealizedPnl") or 0),
+                        "sl_price": float(p["stopLoss"]) if p.get("stopLoss") else None,
                     }
                 )
             return result
@@ -317,6 +318,101 @@ class LiveAdapter(ExchangeAdapter):
             return True
         except Exception:
             return False
+
+    def amend_stop_loss(self, symbol: str, new_sl: float) -> bool:
+        """Cancel existing stop order, place new one, verify it landed.
+
+        Returns True only if the new stop order is verified on the exchange.
+        Never widens: compares new_sl against current open stop orders.
+        """
+        import logging  # noqa: PLC0415
+
+        _log = logging.getLogger(__name__)
+
+        try:
+            # Find existing stop order for this symbol
+            open_orders = self._exchange.fetch_open_orders(symbol)
+        except Exception as exc:
+            _log.warning("amend_stop_loss: fetch_open_orders failed: %s", exc)
+            return False
+
+        stop_types = {"stop", "stop_market", "stop_limit"}
+        existing_stop: dict[str, Any] | None = None
+        for o in open_orders:
+            if o.get("type") in stop_types and o.get("reduceOnly") is not False:
+                existing_stop = o
+                break
+
+        # Determine side and qty from positions
+        try:
+            positions = self._exchange.fetch_positions([symbol])
+        except Exception as exc:
+            _log.warning("amend_stop_loss: fetch_positions failed: %s", exc)
+            return False
+
+        pos = None
+        for p in positions:
+            if p.get("symbol") == symbol and p.get("contracts", 0):
+                pos = p
+                break
+        if pos is None:
+            return False
+
+        side_raw = pos.get("side", "").lower()
+        is_long = side_raw in {"long", "buy"}
+
+        # Never widen
+        if existing_stop is not None:
+            old_stop_price = float(
+                existing_stop.get("stopPrice") or existing_stop.get("price") or 0.0
+            )
+            if old_stop_price > 0:
+                if is_long and new_sl <= old_stop_price:
+                    return False
+                if not is_long and new_sl >= old_stop_price:
+                    return False
+
+        qty = float(pos.get("contracts", 0) or pos.get("qty", 0))
+        if qty <= 0:
+            return False
+
+        # Cancel existing stop
+        if existing_stop is not None:
+            try:
+                self._exchange.cancel_order(existing_stop["id"], symbol)
+            except Exception as exc:
+                _log.warning("amend_stop_loss: cancel existing stop failed: %s", exc)
+
+        # Place new stop
+        sl_side = "sell" if is_long else "buy"
+        try:
+            self._exchange.create_order(
+                symbol,
+                "stop_market",
+                sl_side,
+                qty,
+                None,
+                {"stopPrice": new_sl, "reduceOnly": True},
+            )
+        except Exception as exc:
+            _log.error("amend_stop_loss: place new stop failed: %s", exc)
+            return False
+
+        # Verify the new stop exists
+        try:
+            updated_orders = self._exchange.fetch_open_orders(symbol)
+        except Exception:
+            return False
+
+        for o in updated_orders:
+            if o.get("type") not in stop_types:
+                continue
+            if not o.get("reduceOnly", False):
+                continue
+            sp = float(o.get("stopPrice") or o.get("price") or 0.0)
+            if sp > 0 and abs(sp - new_sl) / new_sl <= 0.001:
+                return True
+        return False
 
 
 __all__ = [

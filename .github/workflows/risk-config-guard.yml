@@ -1,0 +1,34 @@
+name: risk-config-guard
+
+# Fails any PR that touches config/risk.yaml or config/live_approval.yaml
+# unless the PR carries the "owner-approved-risk" label.
+#
+# To make this a required check:
+#   Repository Settings → Branches → Branch protection rules → main/master
+#   → Require status checks to pass before merging
+#   → Add "risk-config-guard / guard" to the required checks list.
+# The check name is "<workflow-name> / <job-id>", i.e. "risk-config-guard / guard".
+
+on:
+  pull_request:
+    paths:
+      - "config/risk.yaml"
+      - "config/live_approval.yaml"
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check for owner-approved-risk label
+        env:
+          LABELS: ${{ toJson(github.event.pull_request.labels.*.name) }}
+        run: |
+          echo "PR labels: $LABELS"
+          if echo "$LABELS" | python3 -c "import sys,json; labels=json.load(sys.stdin); exit(0 if 'owner-approved-risk' in labels else 1)"; then
+            echo "✓ PR has 'owner-approved-risk' label — allowing risk config change."
+          else
+            echo "✗ BLOCKED: This PR changes a protected risk config file."
+            echo "  Add the 'owner-approved-risk' label to allow this change."
+            echo "  Files changed: config/risk.yaml or config/live_approval.yaml"
+            exit 1
+          fi

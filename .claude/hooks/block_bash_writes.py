@@ -2,7 +2,7 @@
 """
 PreToolUse hook — blocks Bash commands that write, move, delete, or overwrite
 protected files: .env, config/risk.yaml, config/live_approval.yaml,
-.claude/settings.json, .claude/settings.local.json.
+.claude/settings.json, .claude/settings.local.json, and the hook scripts themselves.
 
 Detected patterns (case-sensitive paths, anchored to filename):
   sed -i / sed --in-place  targeting a protected path
@@ -10,8 +10,10 @@ Detected patterns (case-sensitive paths, anchored to filename):
   tee                      targeting a protected path
   mv / cp                  where the destination is a protected path
   rm / unlink              targeting a protected path
-  git checkout -- <path>   targeting a protected path
+  git checkout [--] <path> targeting a protected path
   git restore <path>       targeting a protected path
+  python/python3/perl/node one-liners writing to a protected path
+  cat / printf / echo with redirect
 
 Exit 1 (with message on stderr) to block; exit 0 to allow.
 """
@@ -23,16 +25,18 @@ import re
 import sys
 
 PROTECTED = [
-    r"\.env",
+    r"\.env(?!\w)",
     r"config/risk\.yaml",
     r"config/live_approval\.yaml",
     r"\.claude/settings\.json",
     r"\.claude/settings\.local\.json",
+    r"\.claude/hooks/block_sensitive\.sh",
+    r"\.claude/hooks/block_bash_writes\.py",
 ]
 
 # Build a single alternation pattern for "is this string a protected path?"
 _PROTECTED_PAT = re.compile(
-    r"(?:^|[\s'\"/])(" + "|".join(PROTECTED) + r")(?:$|[\s'\"])",
+    r"(?:^|[\s'\"/])(" + "|".join(PROTECTED) + r")(?:$|[\s'\"<>|]|$)",
 )
 
 
@@ -42,22 +46,29 @@ def _mentions_protected(text: str) -> str | None:
     return m.group(1) if m else None
 
 
-# Patterns for dangerous operations.
+# Patterns for dangerous write/mutate operations.
 # Each is (regex_on_command, description).
 _DANGER_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     # sed -i or sed --in-place
     (re.compile(r"\bsed\s+(-\w*i\w*|--in-place)"), "sed -i (in-place edit)"),
     # output redirect  >  or  >>  (but not >&2 or 2>&1 — stderr redirects are safe)
     (re.compile(r"(?<![12&])\s*>{1,2}\s*(?!&)"), "output redirect (> or >>)"),
-    # tee
+    # tee (always writes to a file)
     (re.compile(r"\btee\b"), "tee"),
-    # mv / cp with protected destination (checked separately in handler)
+    # mv / cp with protected destination (checked separately)
     (re.compile(r"\b(mv|cp)\b"), "mv/cp"),
     # rm / unlink
     (re.compile(r"\b(rm|unlink)\b"), "rm/unlink"),
     # git checkout [--] <path> or git restore <path>
-    # Use a lookahead so we don't require a word-boundary after non-word chars like --
     (re.compile(r"\bgit\s+(checkout|restore)\b"), "git checkout/restore"),
+    # python/python3 -c with write-targeting expressions
+    (re.compile(r"\bpython3?\s+(-c|[^-].*open\()"), "python one-liner"),
+    # perl -i or perl -e with write-targeting
+    (re.compile(r"\bperl\s+(-i|-e)"), "perl one-liner"),
+    # node/nodejs -e one-liners
+    (re.compile(r"\bnode\s+-e\b"), "node one-liner"),
+    # cat with redirect (already caught by redirect pattern, but explicit for clarity)
+    # printf is already caught by redirect; echo too
 ]
 
 

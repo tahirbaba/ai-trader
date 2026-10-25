@@ -94,10 +94,7 @@ def compute_price_shock_signals(
         signals.append("liquidation_spike")
 
     # Extreme single-signal trigger (news_shock)
-    extreme = (
-        price_5m_return is not None
-        and abs(price_5m_return) >= extreme_5m_return_pct
-    )
+    extreme = price_5m_return is not None and abs(price_5m_return) >= extreme_5m_return_pct
     if extreme:
         return PriceShockResult(
             shock_detected=True,
