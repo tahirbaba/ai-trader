@@ -14,6 +14,10 @@ class LiveNotApprovedError(AdapterError):
 class SlPlacementError(AdapterError):
     """Raised when SL order placement fails after an entry order was placed."""
 
+    def __init__(self, message: str, order_id: str = "") -> None:
+        super().__init__(message)
+        self.order_id = order_id
+
 
 class DuplicateOrderError(AdapterError):
     """Raised when a client_order_id is reused."""

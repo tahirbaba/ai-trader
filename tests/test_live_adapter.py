@@ -19,6 +19,7 @@ def make_settings() -> object:
     settings = MagicMock()
     settings.exchange_api_key = "test-key"
     settings.exchange_api_secret = "test-secret"
+    settings.trading_mode = "live"
     settings.app.trading.symbols = []
     return settings
 

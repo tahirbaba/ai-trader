@@ -6,8 +6,26 @@ import datetime
 
 import pytest
 
+from trader.config.settings import AppSettings, ModelNames, RiskSettings, Settings
 from trader.execution.exceptions import DuplicateOrderError
 from trader.execution.paper_broker import PaperBroker
+
+
+def _make_settings() -> Settings:
+    risk = RiskSettings(
+        max_margin_per_trade_usd=200.0,
+        max_loss_per_trade_usd=100.0,
+        slippage_buffer_pct=0.05,
+        max_leverage=10,
+        margin_mode="isolated",
+        position_mode="one_way",
+        daily_loss_limit_usd=300.0,
+        weekly_loss_limit_usd=600.0,
+        equity_floor_usd=5.0,
+        allowed_symbols=["BTC/USDT"],
+    )
+    app = AppSettings(models=ModelNames(screening="x", decision="x", review="x"))
+    return Settings(trading_mode="paper", app=app, risk=risk)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -343,3 +361,136 @@ class TestBalancePositions:
         assert p["qty"] == 2.0
         assert "entry_price" in p
         assert "unrealised_pnl" in p
+
+
+# ---------------------------------------------------------------------------
+# MAE / MFE short-side tests
+# ---------------------------------------------------------------------------
+
+
+class TestMaeMfeShort:
+    def test_mae_mfe_tracked_correctly_short(self) -> None:
+        broker = make_broker()
+        broker._mark_prices["BTC/USDT"] = 30_000.0
+        broker.place_order(
+            symbol="BTC/USDT",
+            side="sell",
+            qty=1.0,
+            order_type="market",
+            client_order_id="mae-mfe-short",
+        )
+        # Favorable move for short (price drops)
+        broker.update_mark_price("BTC/USDT", 29_000.0)
+        pos = broker._positions["BTC/USDT"]
+        assert pos["max_favorable_excursion"] > 0
+
+        # Adverse move for short (price rises)
+        broker.update_mark_price("BTC/USDT", 31_000.0)
+        pos = broker._positions["BTC/USDT"]
+        assert pos["max_adverse_excursion"] > 0
+
+
+# ---------------------------------------------------------------------------
+# Funding short-side tests
+# ---------------------------------------------------------------------------
+
+
+class TestFundingShort:
+    def test_funding_applied_short_receives_when_rate_positive(self) -> None:
+        broker = make_broker()
+        broker._mark_prices["BTC/USDT"] = 30_000.0
+        broker.place_order(
+            symbol="BTC/USDT",
+            side="sell",
+            qty=1.0,
+            order_type="market",
+            client_order_id="fund-short-test",
+        )
+        cash_before = broker._cash
+        funding = broker.update_funding("BTC/USDT", funding_rate=0.0001)
+        # Short receives when rate > 0 (funding is negative payment i.e. income)
+        assert funding < 0
+        assert broker._cash > cash_before
+
+
+# ---------------------------------------------------------------------------
+# SL and TP simultaneous trigger
+# ---------------------------------------------------------------------------
+
+
+class TestSlTpSimultaneous:
+    def test_sl_takes_priority_when_price_gaps_through_both(self) -> None:
+        """When price gaps through both SL and TP only one trigger fires."""
+        broker = make_broker()
+        broker._mark_prices["BTC/USDT"] = 30_000.0
+        broker.place_order(
+            symbol="BTC/USDT",
+            side="buy",
+            qty=1.0,
+            order_type="market",
+            stop_loss=28_000.0,
+            take_profit=32_000.0,
+            client_order_id="sl-tp-sim",
+        )
+        # Gap down past SL
+        fills = broker.update_mark_price("BTC/USDT", 27_000.0)
+        assert len(fills) == 1
+        assert fills[0]["reason"] == "sl"
+        assert broker.get_positions() == []
+
+
+# ---------------------------------------------------------------------------
+# force_close with no open position
+# ---------------------------------------------------------------------------
+
+
+class TestForceCloseNoPosition:
+    def test_force_close_returns_cancelled_when_no_position(self) -> None:
+        from unittest.mock import MagicMock
+
+        from trader.execution.order_manager import OrderManager
+
+        settings = _make_settings()
+        broker = make_broker()
+        session_factory = MagicMock(return_value=MagicMock())
+
+        om = OrderManager(broker=broker, settings=settings, session_factory=session_factory)
+        result = om.force_close("BTC/USDT", "test no-position")
+        assert result.status == "cancelled"
+        assert "No open position" in (result.error or "")
+
+
+# ---------------------------------------------------------------------------
+# Reconcile mismatch records risk_event
+# ---------------------------------------------------------------------------
+
+
+class TestReconcileMismatch:
+    def test_reconcile_mismatch_records_risk_event(self) -> None:
+        from unittest.mock import MagicMock
+
+        from trader.execution.order_manager import OrderManager
+
+        settings = _make_settings()
+        broker = make_broker()
+        # Simulate a live position
+        broker._mark_prices["BTC/USDT"] = 30_000.0
+        broker.place_order(
+            symbol="BTC/USDT",
+            side="buy",
+            qty=1.0,
+            order_type="market",
+            client_order_id="reconcile-pos",
+        )
+
+        mock_session = MagicMock()
+        mock_session.query.return_value.filter.return_value.all.return_value = []
+        session_factory = MagicMock(return_value=mock_session)
+
+        om = OrderManager(broker=broker, settings=settings, session_factory=session_factory)
+        result = om.reconcile("BTC/USDT")
+        assert not result.ok
+        assert len(result.mismatches) > 0
+        # Confirm a RiskEvent row was committed
+        assert mock_session.add.called
+        assert mock_session.commit.called

@@ -6,7 +6,7 @@ DISABLED unless config/live_approval.yaml exists.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 
 from trader.config.settings import Settings
 from trader.execution.adapter import ExchangeAdapter
@@ -16,6 +16,9 @@ from trader.execution.exceptions import (
     LiveNotApprovedError,
     SlPlacementError,
 )
+
+if TYPE_CHECKING:
+    import ccxt as ccxt_module  # pragma: no cover
 
 _LIVE_APPROVAL = Path("config/live_approval.yaml")
 
@@ -39,16 +42,25 @@ class LiveAdapter(ExchangeAdapter):
                 "config/live_approval.yaml missing — live trading not approved"
             )
 
+        if getattr(settings, "trading_mode", "paper") != "live":
+            raise LiveNotApprovedError(
+                "trading_mode is not 'live' — LiveAdapter requires explicit live mode"
+            )
+
         # Import ccxt lazily so tests don't require it installed
         import ccxt  # noqa: PLC0415
 
-        self._exchange: Any = ccxt.bybit(
-            {
-                "apiKey": settings.app.trading.symbols and ""
-                or getattr(settings, "exchange_api_key", ""),
-                "secret": getattr(settings, "exchange_api_secret", ""),
-                "options": {"defaultType": "linear"},
-            }
+        self._exchange = cast(
+            "ccxt_module.bybit",
+            ccxt.bybit(
+                {
+                    "apiKey": getattr(settings, "exchange_api_key", ""),
+                    "secret": getattr(settings, "exchange_api_secret", ""),
+                    "options": {"defaultType": "linear"},
+                    "enableRateLimit": True,
+                    "timeout": 30000,
+                }
+            ),
         )
         self._exchange.load_markets()
         self._settings = settings
@@ -149,8 +161,10 @@ class LiveAdapter(ExchangeAdapter):
 
         exchange_order_id: str = order["id"]
 
-        # If SL/TP were requested but couldn't be attached, place separately
-        if sl_tp_params and order.get("status") == "open" and stop_loss is not None:
+        # If SL was requested but not confirmed in response, place as separate stop order.
+        # Covers both open (limit) and filled/closed (market) entry states.
+        sl_confirmed = bool(order.get("stopLossPrice") or order.get("stopLoss"))
+        if stop_loss is not None and not sl_confirmed:
             sl_side = "sell" if side == "buy" else "buy"
             try:
                 self._exchange.create_order(
@@ -167,7 +181,8 @@ class LiveAdapter(ExchangeAdapter):
                 with contextlib.suppress(Exception):
                     self._exchange.cancel_order(exchange_order_id, symbol)
                 raise SlPlacementError(
-                    f"SL placement failed after entry {exchange_order_id}: {sl_exc}"
+                    f"SL placement failed after entry {exchange_order_id}: {sl_exc}",
+                    order_id=exchange_order_id,
                 ) from sl_exc
 
         filled_qty = float(order.get("filled", 0.0) or 0.0)
