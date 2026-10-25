@@ -161,11 +161,33 @@ class MacroCalendar:
         )
         return future[:n]
 
+    def has_coverage(self, horizon_days: int = 14) -> bool:
+        """Return True if at least one high-impact event exists within *horizon_days*.
+
+        Used as a staleness check: if the event source has no coverage over the
+        next 14 days the calendar is considered stale and trading is blocked.
+        """
+        now = datetime.datetime.now(datetime.UTC)
+        cutoff = now + datetime.timedelta(days=horizon_days)
+
+        def _aware(dt: datetime.datetime) -> datetime.datetime:
+            return dt if dt.tzinfo is not None else dt.replace(tzinfo=datetime.UTC)
+
+        return any(
+            now <= _aware(e["dt"]) <= cutoff and e.get("impact", "").lower() == "high"
+            for e in self._events
+        )
+
     def collect(self) -> CollectorResult:
         """Return macro calendar result."""
         now = datetime.datetime.now(datetime.UTC)
         blackout, reason = self.is_blackout(now)
         upcoming_events = self.upcoming(10)
+
+        # Fail-closed: if no high-impact event covers the next 14 days, flag as stale.
+        quality_flags: list[str] = []
+        if not self.has_coverage(horizon_days=14):
+            quality_flags.append("macro_calendar_stale")
 
         # Serialise datetimes for JSON-safe output
         def _serialise(ev: dict[str, Any]) -> dict[str, Any]:
@@ -182,7 +204,7 @@ class MacroCalendar:
                 "is_blackout_now": blackout,
                 "next_event": next_event,
             },
-            quality_flags=[],
+            quality_flags=quality_flags,
         )
 
     def backfill(self, limit: int) -> list[CollectorResult]:

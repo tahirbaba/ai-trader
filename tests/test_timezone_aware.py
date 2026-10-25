@@ -6,9 +6,7 @@ These tests fail if naive datetimes creep back in.
 from __future__ import annotations
 
 import datetime
-import importlib
 import types
-
 
 # ---------------------------------------------------------------------------
 # Helper: walk a module's attributes and collect datetime instances

@@ -122,3 +122,61 @@ class TestMacroCalendar:
         if upcoming:
             assert next_ev is not None
             assert next_ev["dt"] == upcoming[0]["dt"]
+
+    def test_collect_emits_macro_calendar_stale_when_no_coverage(self) -> None:
+        """If no high-impact event covers the next 14 days, macro_calendar_stale is set."""
+        import datetime
+        from unittest.mock import patch
+
+        from trader.data.macro import MacroCalendar
+
+        # Simulate January 2027 — well beyond the 2026 hardcoded events.
+        # At that point the calendar will have no upcoming high-impact events
+        # within 14 days of "now".
+        jan_2027 = datetime.datetime(2027, 1, 15, 12, 0, 0, tzinfo=datetime.UTC)
+        with patch("trader.data.macro.datetime") as mock_dt:
+            mock_dt.datetime.now.return_value = jan_2027
+            mock_dt.timedelta = datetime.timedelta
+            mock_dt.UTC = datetime.UTC
+            cal = MacroCalendar()
+            result = cal.collect()
+
+        assert "macro_calendar_stale" in result.quality_flags, (
+            "Expected macro_calendar_stale flag when no high-impact events "
+            "cover the next 14 days (Jan 2027 scenario)"
+        )
+
+    def test_has_coverage_true_within_horizon(self) -> None:
+        """has_coverage returns True when a high-impact event is within horizon_days."""
+        import datetime
+        from unittest.mock import patch
+
+        from trader.data.macro import MacroCalendar
+
+        # 2026-01-15: FOMC on 2026-01-29 is 14 days away
+        jan_15_2026 = datetime.datetime(2026, 1, 15, 12, 0, 0, tzinfo=datetime.UTC)
+        with patch("trader.data.macro.datetime") as mock_dt:
+            mock_dt.datetime.now.return_value = jan_15_2026
+            mock_dt.timedelta = datetime.timedelta
+            mock_dt.UTC = datetime.UTC
+            cal = MacroCalendar()
+            covered = cal.has_coverage(horizon_days=14)
+
+        assert covered is True
+
+    def test_has_coverage_false_for_jan_2027(self) -> None:
+        """has_coverage returns False when no high-impact event exists within 14 days."""
+        import datetime
+        from unittest.mock import patch
+
+        from trader.data.macro import MacroCalendar
+
+        jan_2027 = datetime.datetime(2027, 1, 15, 12, 0, 0, tzinfo=datetime.UTC)
+        with patch("trader.data.macro.datetime") as mock_dt:
+            mock_dt.datetime.now.return_value = jan_2027
+            mock_dt.timedelta = datetime.timedelta
+            mock_dt.UTC = datetime.UTC
+            cal = MacroCalendar()
+            covered = cal.has_coverage(horizon_days=14)
+
+        assert covered is False
