@@ -64,3 +64,9 @@ strict = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
+
+[dependency-groups]
+dev = [
+    "hypothesis>=6.170.9",
+    "pytest-cov>=7.1.0",
+]
