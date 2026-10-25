@@ -31,6 +31,15 @@ class KsorRetriever:
     def __init__(self, indexer: KsorIndexer) -> None:
         self._indexer = indexer
 
+    def get_all_active(self) -> list[KsorEntry]:
+        """Return all active (non-deprecated, non-candidate) entries.
+
+        Used by :class:`~trader.risk.lesson_filter.LessonFilter` to load
+        the full active lesson set for rule evaluation.
+        """
+        raw = self._indexer.get_all(status_filter=["active"])
+        return [self._row_to_entry(r) for r in raw]
+
     def retrieve(
         self,
         regime: str = "",

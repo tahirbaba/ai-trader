@@ -52,8 +52,13 @@ class LessonFilter:
         entries: list[KsorEntry] | None = None,
     ) -> None:
         self._retriever = retriever
-        # Filter entries to only those with allowed effects at load time
-        raw_entries = entries or []
+        # Populate entries: explicit list takes priority; otherwise load from retriever.
+        if entries is not None:
+            raw_entries = entries
+        elif retriever is not None:
+            raw_entries = retriever.get_all_active()
+        else:
+            raw_entries = []
         self._entries = self._filter_entries(raw_entries)
 
     # ------------------------------------------------------------------

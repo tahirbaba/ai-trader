@@ -257,3 +257,57 @@ def test_ksor_entry_defaults():
     assert e.effect is None
     assert e.body == ""
     assert e.file_path == ""
+
+
+# ---------------------------------------------------------------------------
+# Empty directory
+# ---------------------------------------------------------------------------
+
+
+def test_empty_directory_returns_empty_list(tmp_path):
+    """load_ksor_entries on an empty dir returns [] without error."""
+    entries = load_ksor_entries(tmp_path)
+    assert entries == []
+
+
+# ---------------------------------------------------------------------------
+# Negative effect_value rejected
+# ---------------------------------------------------------------------------
+
+
+def test_negative_effect_value_skipped(tmp_path):
+    """A lesson file with a negative effect_value is skipped (model validation fails)."""
+    md = """\
+        ---
+        id: L-BAD
+        type: lesson
+        status: active
+        effect: confidence_penalty
+        effect_value: -0.30
+        ---
+        Bad lesson
+    """
+    write_md(tmp_path, "L-BAD.md", md)
+    entries = load_ksor_entries(tmp_path)
+    ids = {e.id for e in entries}
+    assert "L-BAD" not in ids
+
+
+def test_positive_effect_value_accepted(tmp_path):
+    """A lesson file with a positive effect_value loads correctly."""
+    md = """\
+        ---
+        id: L-GOOD
+        type: lesson
+        status: active
+        effect: confidence_penalty
+        effect_value: 0.20
+        ---
+        Good lesson
+    """
+    write_md(tmp_path, "L-GOOD.md", md)
+    entries = load_ksor_entries(tmp_path)
+    ids = {e.id for e in entries}
+    assert "L-GOOD" in ids
+    good = next(e for e in entries if e.id == "L-GOOD")
+    assert good.effect_value == pytest.approx(0.20)

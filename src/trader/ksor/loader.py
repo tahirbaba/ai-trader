@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import frontmatter  # python-frontmatter
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +24,19 @@ class KsorEntry(BaseModel):
     condition: str = ""
     rule: dict[str, Any] | None = None
     effect: str | None = None
-    effect_value: float | None = None
+    effect_value: float | None = Field(default=None, ge=0)
+
+    @field_validator("effect_value", mode="before")
+    @classmethod
+    def _reject_negative_effect_value(cls, v: object) -> object:
+        if v is not None:
+            try:
+                fv = float(v)  # type: ignore[arg-type]
+                if fv < 0:
+                    raise ValueError(f"effect_value must be >= 0, got {fv}")
+            except (TypeError, ValueError) as exc:
+                raise ValueError(str(exc)) from exc
+        return v
     action: str = ""
     evidence_trades: list[str] = Field(default_factory=list)
     win_stats: dict[str, Any] = Field(default_factory=dict)

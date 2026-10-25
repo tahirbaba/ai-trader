@@ -245,3 +245,44 @@ def test_result_has_details():
     assert "id" in detail
     assert "effect" in detail
     assert "matched" in detail
+
+
+# ---------------------------------------------------------------------------
+# Negative effect_value cannot be constructed — KsorEntry validation rejects it
+# ---------------------------------------------------------------------------
+
+
+def test_negative_effect_value_rejected_by_model():
+    """KsorEntry with negative effect_value raises ValueError at construction."""
+    import pytest
+
+    with pytest.raises((ValueError, Exception)):
+        KsorEntry(
+            id="L-BAD",
+            type="lesson",
+            status="active",
+            effect="confidence_penalty",
+            effect_value=-0.30,
+        )
+
+
+# ---------------------------------------------------------------------------
+# LessonFilter(retriever=...) without entries= uses retriever.get_all_active()
+# ---------------------------------------------------------------------------
+
+
+def test_lesson_filter_wired_via_retriever_only():
+    """When only retriever is passed, lessons are loaded from retriever."""
+    lesson = make_entry("L-0001", rule=BLOCK_RULE, effect="block")
+    indexer = KsorIndexer(db_path=":memory:")
+    indexer.build([lesson])
+    retriever = KsorRetriever(indexer)
+
+    # Construct without explicit entries=
+    lf = LessonFilter(retriever=retriever)
+    result = lf.evaluate(
+        decision_dict=CONTEXT_SHORT_NEG_FUNDING["decision"],
+        feature_dict=CONTEXT_SHORT_NEG_FUNDING["features"],
+    )
+    assert result.blocked is True
+    assert "L-0001" in result.matched_lessons

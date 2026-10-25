@@ -321,3 +321,49 @@ def test_l0001_rule_no_match_funding_not_extreme():
     }
     ctx = {"decision": {"side": "short"}, "features": {"funding_z": -1.0}}
     assert evaluate_rule(rule, ctx) is False
+
+
+# ---------------------------------------------------------------------------
+# Empty rule dict raises RuleEngineError
+# ---------------------------------------------------------------------------
+
+
+def test_empty_rule_dict_raises():
+    """evaluate_rule({}, ctx) must raise RuleEngineError, not silently return."""
+    with pytest.raises(RuleEngineError):
+        evaluate_rule({}, CONTEXT)
+
+
+# ---------------------------------------------------------------------------
+# Nested wrapper combinations: not(all(...))
+# ---------------------------------------------------------------------------
+
+
+def test_not_all_combination():
+    """not(all([short, funding < -2])) = True when at least one clause fails."""
+    rule = {
+        "not": {
+            "all": [
+                {"field": "decision.side", "op": "eq", "value": "long"},  # False
+                {"field": "features.funding_z", "op": "lt", "value": -2.0},  # True
+            ]
+        }
+    }
+    # all([False, True]) = False; not(False) = True
+    assert evaluate_rule(rule, CONTEXT) is True
+
+
+def test_all_containing_any():
+    """all([any([...]), leaf]) works for nested combinations."""
+    rule = {
+        "all": [
+            {
+                "any": [
+                    {"field": "decision.side", "op": "eq", "value": "long"},  # False
+                    {"field": "decision.side", "op": "eq", "value": "short"},  # True
+                ]
+            },
+            {"field": "features.funding_z", "op": "lt", "value": -2.0},  # True
+        ]
+    }
+    assert evaluate_rule(rule, CONTEXT) is True

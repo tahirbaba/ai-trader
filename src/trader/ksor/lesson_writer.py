@@ -147,12 +147,14 @@ class LessonWriter:
                 cwd=str(repo_root),
                 check=True,
                 capture_output=True,
+                timeout=30,
             )
             subprocess.run(
                 ["git", "commit", "-m", message],
                 cwd=str(repo_root),
                 check=True,
                 capture_output=True,
+                timeout=30,
             )
             logger.info("LessonWriter: committed %s", file_path.name)
         except subprocess.CalledProcessError as exc:
