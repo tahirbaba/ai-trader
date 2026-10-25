@@ -7,6 +7,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
+- Phase 5: `src/trader/risk/models.py` — Pydantic models for RiskGate I/O: `DecisionInput`, `AccountState`, `MarketState`, `LessonCheckInput`, `RiskVerdict`.
+- Phase 5: `src/trader/risk/sizing.py` — pure-function position sizing (`compute_size`), isolated-margin liquidation price (`compute_liquidation_price`), and risk-reward check (`check_risk_reward`); `SizingError` exception.
+- Phase 5: `src/trader/risk/gate.py` — `RiskGate.evaluate()` with 27 ordered checks: kill switch, live-mode guard, action filter, symbol allowlist, lesson block, clock drift, data freshness, spread, macro/exchange blackout, equity floor, daily/weekly loss limits, consecutive losses, cooldown, position/trade/LLM-budget caps, confidence, confluence, stop-loss validity, ATR range, funding window, sizing, liquidation buffer, risk-reward, and entry drift.
+- Phase 5: `src/trader/execution/layer2_check.py` — independent Layer 2 cap re-check (`layer2_cap_check`) called by Executor before any order send; `CapBreachError` exception; never imports from `gate.py`.
+- Phase 5: `src/trader/risk/recorder.py` — DSOR helpers `record_risk_check()` and `record_risk_event()` for writing to `risk_checks` and `risk_events` tables.
+- Phase 5: 78 new tests across 4 test files: `test_sizing`, `test_risk_gate` (one test per rejection rule + happy path), `test_risk_gate_property` (3 Hypothesis property tests, 500 examples each), `test_layer2_check`.
+- Phase 5: `hypothesis>=6.170.9` added to dev dependencies for property-based testing.
+- Phase 5: `pytest-cov` added to dev dependencies for branch coverage verification.
+- Phase 5: `docs/specs/phase5-risk-gate.md` and `docs/decisions/ADR-007-risk-gate.md`.
+
 - Phase 4: `KsorEntry` Pydantic model — canonical in-memory representation of any KSOR `.md` entry with all BUILD_PLAN.md §PHASE 4 fields.
 - Phase 4: `loader.py` — recursive `load_ksor_entries()` using `python-frontmatter`; parse errors skipped with a warning.
 - Phase 4: `rule_engine.py` — safe DSL evaluator: `all`/`any`/`not` wrappers + `{field, op, value}` leaf clauses; supported ops `eq/ne/lt/le/gt/ge/in/not_in`; dot-path field lookup; no eval/exec/importlib; unknown field → False, unknown op → `RuleEngineError`.
