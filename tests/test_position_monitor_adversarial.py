@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import inspect
 from typing import Any
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from hypothesis import HealthCheck, given, settings
@@ -32,12 +32,11 @@ from hypothesis import strategies as st
 from trader.config.settings import PriceShockSettings
 from trader.execution.paper_broker import PaperBroker
 from trader.execution.position_monitor import PositionMonitor
-from trader.risk.price_shock import compute_shock_sl_amendment
-
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _shock_cfg(**kw) -> PriceShockSettings:
     base = dict(
@@ -61,10 +60,16 @@ def _paper_long(entry: float = 1.0, sl: float = 0.8, qty: float = 10.0) -> Paper
     b = PaperBroker(initial_balance=10_000.0)
     b._mark_prices["SYM"] = entry
     b._positions["SYM"] = {
-        "symbol": "SYM", "side": "buy", "qty": qty,
-        "entry_price": entry, "margin": entry * qty / 3.0,
-        "sl_price": sl, "tp_price": None, "open_ts": None,
-        "max_adverse_excursion": 0.0, "max_favorable_excursion": 0.0,
+        "symbol": "SYM",
+        "side": "buy",
+        "qty": qty,
+        "entry_price": entry,
+        "margin": entry * qty / 3.0,
+        "sl_price": sl,
+        "tp_price": None,
+        "open_ts": None,
+        "max_adverse_excursion": 0.0,
+        "max_favorable_excursion": 0.0,
         "funding_paid": 0.0,
     }
     return b
@@ -74,10 +79,16 @@ def _paper_short(entry: float = 1.0, sl: float = 1.2, qty: float = 10.0) -> Pape
     b = PaperBroker(initial_balance=10_000.0)
     b._mark_prices["SYM"] = entry
     b._positions["SYM"] = {
-        "symbol": "SYM", "side": "sell", "qty": qty,
-        "entry_price": entry, "margin": entry * qty / 3.0,
-        "sl_price": sl, "tp_price": None, "open_ts": None,
-        "max_adverse_excursion": 0.0, "max_favorable_excursion": 0.0,
+        "symbol": "SYM",
+        "side": "sell",
+        "qty": qty,
+        "entry_price": entry,
+        "margin": entry * qty / 3.0,
+        "sl_price": sl,
+        "tp_price": None,
+        "open_ts": None,
+        "max_adverse_excursion": 0.0,
+        "max_favorable_excursion": 0.0,
         "funding_paid": 0.0,
     }
     return b
@@ -93,8 +104,11 @@ def _mock_adapter_with_position(
     """Return a MagicMock broker whose get_positions() includes an sl_price field."""
     mock = MagicMock()
     pos: dict[str, Any] = {
-        "symbol": "SYM", "side": side, "qty": qty,
-        "entry_price": entry, "unrealised_pnl": 0.0,
+        "symbol": "SYM",
+        "side": side,
+        "qty": qty,
+        "entry_price": entry,
+        "unrealised_pnl": 0.0,
     }
     if sl_key:
         pos[sl_key] = sl
@@ -172,9 +186,7 @@ def test_breakeven_move_never_widens_long_sl_property(
     broker = _paper_long(entry=entry, sl=sl)
     original_sl = broker._positions["SYM"]["sl_price"]
 
-    monitor = PositionMonitor(
-        broker, _shock_cfg(move_sl_to_breakeven_on_favorable_shock=True)
-    )
+    monitor = PositionMonitor(broker, _shock_cfg(move_sl_to_breakeven_on_favorable_shock=True))
     monitor.monitor_shock("SYM", price_5m_return=favorable_return, price_1m_return=None)
 
     new_sl = broker._positions["SYM"]["sl_price"]
@@ -183,9 +195,7 @@ def test_breakeven_move_never_widens_long_sl_property(
         f"new_sl={new_sl}, return={favorable_return}"
     )
     # SL must not exceed entry (would make SL above entry for long = wrong side)
-    assert new_sl <= entry + 1e-6, (
-        f"Breakeven moved SL ABOVE entry: entry={entry}, new_sl={new_sl}"
-    )
+    assert new_sl <= entry + 1e-6, f"Breakeven moved SL ABOVE entry: entry={entry}, new_sl={new_sl}"
 
 
 @given(
@@ -202,9 +212,7 @@ def test_breakeven_move_never_widens_short_sl_property(
     broker = _paper_short(entry=entry, sl=sl)
     original_sl = broker._positions["SYM"]["sl_price"]
 
-    monitor = PositionMonitor(
-        broker, _shock_cfg(move_sl_to_breakeven_on_favorable_shock=True)
-    )
+    monitor = PositionMonitor(broker, _shock_cfg(move_sl_to_breakeven_on_favorable_shock=True))
     monitor.monitor_shock("SYM", price_5m_return=favorable_return, price_1m_return=None)
 
     new_sl = broker._positions["SYM"]["sl_price"]
@@ -213,9 +221,9 @@ def test_breakeven_move_never_widens_short_sl_property(
         f"new_sl={new_sl}, return={favorable_return}"
     )
     # SL must not go below entry
-    assert new_sl >= entry - 1e-6, (
-        f"Breakeven moved SL BELOW entry for short: entry={entry}, new_sl={new_sl}"
-    )
+    assert (
+        new_sl >= entry - 1e-6
+    ), f"Breakeven moved SL BELOW entry for short: entry={entry}, new_sl={new_sl}"
 
 
 # ===========================================================================
@@ -259,9 +267,9 @@ def test_live_adapter_amend_stop_loss_is_always_reduce_only() -> None:
     kwargs = call_kwargs[1] if call_kwargs[1] else {}
     # create_order(symbol, type, side, qty, price, params)
     params = args[5] if len(args) > 5 else kwargs.get("params", {})
-    assert params.get("reduceOnly") is True, (
-        f"amend_stop_loss did not pass reduceOnly=True; params={params}"
-    )
+    assert (
+        params.get("reduceOnly") is True
+    ), f"amend_stop_loss did not pass reduceOnly=True; params={params}"
 
 
 # ===========================================================================
@@ -277,14 +285,20 @@ def test_position_monitor_never_imports_exchange_modules() -> None:
     import ast
     import pathlib
 
-    src = pathlib.Path(__file__).parent.parent / "src" / "trader" / "execution" / "position_monitor.py"
+    src = (
+        pathlib.Path(__file__).parent.parent
+        / "src"
+        / "trader"
+        / "execution"
+        / "position_monitor.py"
+    )
     tree = ast.parse(src.read_text())
 
     forbidden_imports = {"ccxt", "bybit", "binance", "okx", "requests", "httpx", "aiohttp"}
     found_forbidden: list[str] = []
 
     for node in ast.walk(tree):
-        if isinstance(node, (ast.Import, ast.ImportFrom)):
+        if isinstance(node, ast.Import | ast.ImportFrom):
             if isinstance(node, ast.Import):
                 names = [alias.name for alias in node.names]
             else:
@@ -301,15 +315,19 @@ def test_position_monitor_never_imports_exchange_modules() -> None:
 
 
 def test_position_monitor_only_calls_broker_methods() -> None:
-    """PositionMonitor must only interact with the broker via get_positions() and amend_stop_loss().
+    """PositionMonitor normal path: get_positions() + amend_stop_loss(). No place_order.
 
-    It must NOT call place_order, cancel_order, or any other order-creating method.
+    place_order is only allowed during the emergency-close halt path (2nd adverse failure).
+    For a single failure, place_order must NOT be called.
     """
     broker = _mock_adapter_with_position(side="long", entry=1.0, sl=0.8)
     monitor = PositionMonitor(broker, _shock_cfg(open_position_risk_cut_pct=50.0))
     monitor.monitor_shock("SYM", price_5m_return=-2.0, price_1m_return=None)
 
-    assert not broker.place_order.called, "PositionMonitor called place_order directly"
+    assert not broker.place_order.called, (
+        "PositionMonitor called place_order on the first failure — "
+        "emergency close is only triggered on the 2nd consecutive adverse failure"
+    )
     assert not broker.cancel_order.called, "PositionMonitor called cancel_order directly"
     assert broker.get_positions.called, "PositionMonitor must call get_positions"
 
@@ -339,14 +357,14 @@ def test_long_plus_price_down_is_always_adverse(negative_return: float) -> None:
     assert len(results) == 1
     r = results[0]
     # Must have attempted an amendment (not no_amendment_needed)
-    assert r["reason"] != "no_amendment_needed", (
-        f"Long + negative return not treated as adverse: return={negative_return}"
-    )
+    assert (
+        r["reason"] != "no_amendment_needed"
+    ), f"Long + negative return not treated as adverse: return={negative_return}"
     # If amended, new SL must be tighter (higher for long)
     if r["amended"]:
-        assert r["new_sl"] > original_sl, (
-            f"Adverse amendment moved SL DOWN for long: original={original_sl}, new={r['new_sl']}"
-        )
+        assert (
+            r["new_sl"] > original_sl
+        ), f"Adverse amendment moved SL DOWN for long: original={original_sl}, new={r['new_sl']}"
 
 
 @given(
@@ -365,13 +383,13 @@ def test_short_plus_price_up_is_always_adverse(positive_return: float) -> None:
 
     assert len(results) == 1
     r = results[0]
-    assert r["reason"] != "no_amendment_needed", (
-        f"Short + positive return not treated as adverse: return={positive_return}"
-    )
+    assert (
+        r["reason"] != "no_amendment_needed"
+    ), f"Short + positive return not treated as adverse: return={positive_return}"
     if r["amended"]:
-        assert r["new_sl"] < original_sl, (
-            f"Adverse amendment moved SL UP for short: original={original_sl}, new={r['new_sl']}"
-        )
+        assert (
+            r["new_sl"] < original_sl
+        ), f"Adverse amendment moved SL UP for short: original={original_sl}, new={r['new_sl']}"
 
 
 @given(
@@ -384,16 +402,17 @@ def test_long_plus_price_up_is_never_adverse(positive_return: float) -> None:
     sl = 0.8
     broker = _paper_long(entry=entry, sl=sl)
     monitor = PositionMonitor(
-        broker, _shock_cfg(open_position_risk_cut_pct=50.0, move_sl_to_breakeven_on_favorable_shock=False)
+        broker,
+        _shock_cfg(open_position_risk_cut_pct=50.0, move_sl_to_breakeven_on_favorable_shock=False),
     )
     results = monitor.monitor_shock("SYM", price_5m_return=positive_return, price_1m_return=None)
 
     # With breakeven disabled and favorable shock: no amendment
     assert len(results) == 1
     r = results[0]
-    assert r["reason"] == "no_amendment_needed", (
-        f"Long + positive return treated as adverse (wrongly cut SL): return={positive_return}"
-    )
+    assert (
+        r["reason"] == "no_amendment_needed"
+    ), f"Long + positive return treated as adverse (wrongly cut SL): return={positive_return}"
 
 
 @given(
@@ -406,15 +425,16 @@ def test_short_plus_price_down_is_never_adverse(negative_return: float) -> None:
     sl = 1.2
     broker = _paper_short(entry=entry, sl=sl)
     monitor = PositionMonitor(
-        broker, _shock_cfg(open_position_risk_cut_pct=50.0, move_sl_to_breakeven_on_favorable_shock=False)
+        broker,
+        _shock_cfg(open_position_risk_cut_pct=50.0, move_sl_to_breakeven_on_favorable_shock=False),
     )
     results = monitor.monitor_shock("SYM", price_5m_return=negative_return, price_1m_return=None)
 
     assert len(results) == 1
     r = results[0]
-    assert r["reason"] == "no_amendment_needed", (
-        f"Short + negative return treated as adverse: return={negative_return}"
-    )
+    assert (
+        r["reason"] == "no_amendment_needed"
+    ), f"Short + negative return treated as adverse: return={negative_return}"
 
 
 # ===========================================================================
@@ -422,31 +442,51 @@ def test_short_plus_price_down_is_never_adverse(negative_return: float) -> None:
 # ===========================================================================
 
 
-def test_position_monitor_cannot_place_order() -> None:
-    """PositionMonitor must have NO path to place_order under any shock scenario."""
+def test_position_monitor_cannot_place_order_on_first_failure() -> None:
+    """PositionMonitor must NOT call place_order for the first adverse failure.
+
+    place_order is reserved for the emergency-close halt path (2nd consecutive failure).
+    Non-halt scenarios must never touch place_order.
+    """
     broker = _mock_adapter_with_position(side="long", entry=1.0, sl=0.8)
-    monitor = PositionMonitor(broker, _shock_cfg())
+    broker.amend_stop_loss.return_value = False  # first failure
+    monitor = PositionMonitor(broker, _shock_cfg(open_position_risk_cut_pct=50.0))
 
-    # Run monitor with all shock variants
-    for ret in [-5.0, -0.5, 0.5, 5.0, None]:
-        monitor.monitor_shock("SYM", price_5m_return=ret, price_1m_return=None)
-
+    # Single failure — no halt
+    monitor.monitor_shock("SYM", price_5m_return=-2.0, price_1m_return=None)
     assert not broker.place_order.called, (
-        "PositionMonitor called place_order — it must only call amend_stop_loss"
+        "PositionMonitor called place_order on 1st failure — "
+        "emergency close only triggers on 2nd consecutive adverse failure"
     )
 
 
-def test_position_monitor_source_has_no_place_order_call() -> None:
-    """PositionMonitor source code must contain no call to place_order."""
+def test_position_monitor_source_references_only_adapter_interface() -> None:
+    """PositionMonitor must not call create_order directly (exchange SDK bypass)."""
     import pathlib
-    src = pathlib.Path(__file__).parent.parent / "src" / "trader" / "execution" / "position_monitor.py"
+
+    src = (
+        pathlib.Path(__file__).parent.parent
+        / "src"
+        / "trader"
+        / "execution"
+        / "position_monitor.py"
+    )
     code = src.read_text()
-    assert "place_order" not in code, (
-        "PositionMonitor source references place_order — must be removed"
-    )
     assert "create_order" not in code, (
-        "PositionMonitor source references create_order directly"
+        "PositionMonitor references create_order directly — "
+        "all exchange access must go via broker.amend_stop_loss() or broker.place_order()"
     )
+    assert (
+        "place_order" in code
+    ), "PositionMonitor must have emergency close path via broker.place_order()"
+    # Verify every place_order call uses reduce_only=True
+    import re as _re
+
+    place_order_blocks = _re.findall(r"place_order\(.*?\)", code, _re.DOTALL)
+    for block in place_order_blocks:
+        assert (
+            "reduce_only=True" in block
+        ), f"place_order call in PositionMonitor missing reduce_only=True:\n{block}"
 
 
 # ===========================================================================
@@ -466,12 +506,10 @@ def test_position_monitor_not_importable_from_llm_client() -> None:
         return
 
     llm_src = inspect.getsource(llm_client_mod)
-    assert "PositionMonitor" not in llm_src, (
-        "LLM client imports PositionMonitor — LLM must never touch execution layer"
-    )
-    assert "position_monitor" not in llm_src, (
-        "LLM client references position_monitor module"
-    )
+    assert (
+        "PositionMonitor" not in llm_src
+    ), "LLM client imports PositionMonitor — LLM must never touch execution layer"
+    assert "position_monitor" not in llm_src, "LLM client references position_monitor module"
 
 
 def test_position_monitor_not_reachable_from_decision_agent() -> None:
@@ -483,9 +521,7 @@ def test_position_monitor_not_reachable_from_decision_agent() -> None:
         return
 
     src = inspect.getsource(decision_mod)
-    assert "PositionMonitor" not in src, (
-        "Decision agent (LLM-driven) imports PositionMonitor"
-    )
+    assert "PositionMonitor" not in src, "Decision agent (LLM-driven) imports PositionMonitor"
 
 
 # ===========================================================================
@@ -510,9 +546,9 @@ def test_broker_exception_during_amend_is_not_treated_as_success() -> None:
         )
     # If results were returned (exception swallowed), amended must be False
     for r in results:
-        assert r.get("amended") is not True, (
-            "PositionMonitor recorded amended=True despite broker raising an exception"
-        )
+        assert (
+            r.get("amended") is not True
+        ), "PositionMonitor recorded amended=True despite broker raising an exception"
 
 
 def test_broker_returns_none_not_treated_as_success() -> None:
@@ -525,9 +561,9 @@ def test_broker_returns_none_not_treated_as_success() -> None:
 
     for r in results:
         # None is falsy, so 'amended' should be False (from `amended = broker.amend_stop_loss(...)`)
-        assert r.get("amended") is not True, (
-            "None return from amend_stop_loss treated as True (success)"
-        )
+        assert (
+            r.get("amended") is not True
+        ), "None return from amend_stop_loss treated as True (success)"
 
 
 # ===========================================================================
@@ -544,14 +580,16 @@ def test_bug_c1_live_adapter_missing_sl_price_causes_silent_skip() -> None:
     """
     # Broker returns position WITHOUT sl_price (edge case / future impl safety)
     mock_adapter = MagicMock()
-    mock_adapter.get_positions.return_value = [{
-        "symbol": "SYM",
-        "side": "long",
-        "qty": 10.0,
-        "entry_price": 1.0,
-        "unrealised_pnl": 0.0,
-        # sl_price absent — PositionMonitor must skip gracefully, not crash
-    }]
+    mock_adapter.get_positions.return_value = [
+        {
+            "symbol": "SYM",
+            "side": "long",
+            "qty": 10.0,
+            "entry_price": 1.0,
+            "unrealised_pnl": 0.0,
+            # sl_price absent — PositionMonitor must skip gracefully, not crash
+        }
+    ]
     mock_adapter.amend_stop_loss.return_value = True
 
     monitor = PositionMonitor(mock_adapter, _shock_cfg(open_position_risk_cut_pct=50.0))
@@ -566,61 +604,123 @@ def test_bug_c1_live_adapter_missing_sl_price_causes_silent_skip() -> None:
 # ===========================================================================
 
 
-def test_bug_b2_reduce_only_null_bypasses_never_widen_check() -> None:
-    """BUG-B2: If the exchange returns reduceOnly=None (not False) for an existing
-    stop order, the never-widen check in LiveAdapter.amend_stop_loss is bypassed,
-    allowing the SL to be widened.
+def test_bug_b2_reduce_only_null_never_widen_still_applied() -> None:
+    """BUG-B2 fixed: even when exchange returns reduceOnly=None for an existing stop,
+    the conservative never-widen check still uses its stopPrice as a baseline.
 
-    Reproduction steps:
-      1. Exchange fetch_open_orders returns stop order with 'reduceOnly': None.
-      2. existing_stop lookup: o.get('reduceOnly', False) = None (falsy) → skipped.
-      3. existing_stop remains None.
-      4. Never-widen check at line 364: 'if existing_stop is not None' → skipped.
-      5. New SL (wider) is placed without any comparison against the old stop price.
+    Fix design:
+      - _conservative_existing_sl() uses ANY close-side stop order for the baseline
+        (regardless of reduceOnly value), so reduceOnly=None is not a bypass.
+      - _find_sl_order_to_cancel() is strict (reduceOnly==True) — so the order is
+        not canceled, but the never-widen check IS applied.
+
+    Expected: attempt to widen SL from 0.8 → 0.5 on a long is REJECTED (False).
     """
     from trader.execution.live_adapter import LiveAdapter
 
-    old_stop_price = 0.9   # current stop for long at 0.9 (above entry 0.8... wait)
-    # For a long with entry=1.0, SL=0.8, old stop is at 0.8
-    # widening = moving SL DOWN = new_sl=0.5 < old_sl=0.8
     old_stop_price = 0.8
-    widen_to = 0.5  # wider (further from entry) for a long
+    widen_to = 0.5  # would widen SL for a long (further from entry)
 
     mock_exchange = MagicMock()
-    # Existing stop with reduceOnly=None (not False — exchange returned null)
-    mock_exchange.fetch_open_orders.side_effect = [
-        # First call: existing stop found BUT reduceOnly is None
-        [{"id": "stop1", "type": "stop_market", "reduceOnly": None,
-          "stopPrice": old_stop_price, "amount": 10.0, "side": "sell"}],
-        # Second call: verification — finds the new (wider) stop
-        [{"type": "stop_market", "reduceOnly": True,
-          "stopPrice": widen_to, "amount": 10.0}],
+    mock_exchange.fetch_open_orders.return_value = [
+        # Existing stop with reduceOnly=None — conservative baseline still uses its price
+        {
+            "id": "stop1",
+            "type": "stop_market",
+            "reduceOnly": None,
+            "stopPrice": old_stop_price,
+            "amount": 10.0,
+            "side": "sell",
+        }
     ]
     mock_exchange.fetch_positions.return_value = [
+        # Position with no stopLoss field → primary source missing
         {"symbol": "SYM", "contracts": 10.0, "side": "long"}
     ]
-    mock_exchange.cancel_order.return_value = {}
-    mock_exchange.create_order.return_value = {"id": "new_stop"}
 
     adapter = object.__new__(LiveAdapter)
     adapter._exchange = mock_exchange
 
     result = adapter.amend_stop_loss("SYM", widen_to)
 
-    # BUG-B2 fixed: reduceOnly=None is no longer treated as truthy.
-    # The existing stop is NOT found, so existing_stop stays None,
-    # and the never-widen check is skipped — widening IS allowed.
-    # The correct fix makes the stop found only when reduceOnly is True.
-    # With the fix applied, widen_to=0.5 < old_sl=0.8 should be rejected.
     assert result is False, (
-        "BUG-B2 fix: with reduceOnly=None, existing stop must still be found "
-        "and never-widen must block widen_to < old_stop_price for a long position."
+        "BUG-B2 fix: conservative never-widen must use reduceOnly=None stop price "
+        "as baseline — widen_to=0.5 < old_sl=0.8 must be rejected for a long position."
     )
-    placed_stop = None
-    if placed_stop is not None:
-        assert placed_stop < old_stop_price, (
-            f"BUG-B2: Wider SL ({placed_stop}) placed vs old SL ({old_stop_price})"
-        )
+    mock_exchange.create_order.assert_not_called()  # no placement attempted
+
+
+def test_position_stopLoss_field_is_primary_never_widen_source() -> None:
+    """Primary never-widen source is position's stopLoss field (Bybit v5).
+
+    Even when there is no matching stop order in open orders, the position's
+    stopLoss field alone is sufficient to block widening.
+    """
+    from trader.execution.live_adapter import LiveAdapter
+
+    mock_exchange = MagicMock()
+    mock_exchange.fetch_open_orders.return_value = []  # no open orders
+    mock_exchange.fetch_positions.return_value = [
+        {
+            "symbol": "SYM",
+            "contracts": 10.0,
+            "side": "long",
+            "stopLoss": "0.8",  # position has stopLoss field (Bybit v5 string)
+        }
+    ]
+
+    adapter = object.__new__(LiveAdapter)
+    adapter._exchange = mock_exchange
+
+    result = adapter.amend_stop_loss("SYM", 0.5)  # widen attempt
+
+    assert (
+        result is False
+    ), "position's stopLoss field must block widening even without matching open orders"
+    mock_exchange.create_order.assert_not_called()
+
+
+def test_strict_reduce_only_required_for_cancel_not_for_baseline() -> None:
+    """Strict reduceOnly==True is required to CANCEL a stop, but not to USE it as baseline.
+
+    A stop with reduceOnly=None at price 0.8 should:
+      - Block widening to 0.5 (conservative baseline)
+      - NOT be canceled (strict cancel requires reduceOnly==True)
+
+    A tighter amendment (0.8 → 0.9 for long) should:
+      - Pass never-widen (0.9 > 0.8)
+      - The reduceOnly=None stop is NOT canceled
+      - A new stop_market (reduceOnly=True) is placed and verified
+    """
+    from trader.execution.live_adapter import LiveAdapter
+
+    mock_exchange = MagicMock()
+    mock_exchange.fetch_open_orders.return_value = [
+        # Existing stop with reduceOnly=None
+        {
+            "id": "stop1",
+            "type": "stop_market",
+            "reduceOnly": None,
+            "stopPrice": 0.8,
+            "amount": 10.0,
+            "side": "sell",
+        }
+    ]
+    # fetch_positions: first call returns current SL=0.8; verification call returns SL=0.9
+    mock_exchange.fetch_positions.side_effect = [
+        [{"symbol": "SYM", "contracts": 10.0, "side": "long", "stopLoss": "0.8"}],
+        [{"symbol": "SYM", "contracts": 10.0, "side": "long", "stopLoss": "0.9"}],
+    ]
+    mock_exchange.create_order.return_value = {"id": "new_stop"}
+
+    adapter = object.__new__(LiveAdapter)
+    adapter._exchange = mock_exchange
+
+    result = adapter.amend_stop_loss("SYM", 0.9)  # tighter (0.8 → 0.9 for long), allowed
+
+    assert result is True, "Tighter amendment must succeed"
+    mock_exchange.cancel_order.assert_not_called()  # stop NOT canceled (reduceOnly=None)
+    mock_exchange.create_order.assert_called_once()  # new stop placed
 
 
 # ===========================================================================
@@ -763,7 +863,6 @@ def test_1m_return_used_as_fallback_when_5m_is_none() -> None:
     Adverse for long = negative 1m return.
     """
     broker = _paper_long(entry=1.0, sl=0.8)
-    original_sl = broker._positions["SYM"]["sl_price"]
     monitor = PositionMonitor(broker, _shock_cfg(open_position_risk_cut_pct=50.0))
 
     # 5m=None, 1m negative → adverse for long
@@ -772,9 +871,9 @@ def test_1m_return_used_as_fallback_when_5m_is_none() -> None:
     assert len(results) == 1
     r = results[0]
     # Should have attempted amendment (adverse)
-    assert r["reason"] != "no_amendment_needed", (
-        "1m return fallback not triggering adverse amendment"
-    )
+    assert (
+        r["reason"] != "no_amendment_needed"
+    ), "1m return fallback not triggering adverse amendment"
 
 
 def test_both_none_returns_empty() -> None:

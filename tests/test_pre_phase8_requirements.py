@@ -9,29 +9,51 @@ Covers:
 
 from __future__ import annotations
 
+import asyncio
 import datetime
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
 from sqlalchemy import create_engine
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
-from trader.config.settings import AppSettings, ModelNames, PriceShockSettings, RiskSettings, Settings
+from trader.agents.orchestrator import TradeCycleOrchestrator
+from trader.config.settings import (
+    AppSettings,
+    ModelNames,
+    PriceShockSettings,
+    RiskSettings,
+    Settings,
+    TradingConfig,
+)
+from trader.data.macro import MacroCalendar
 from trader.data.market import OHLCVCollector
 from trader.dsor.base import Base
+from trader.dsor.models import RiskEvent
 from trader.dsor.system_state import SystemStateHelper
 from trader.execution.paper_broker import PaperBroker
 from trader.execution.position_monitor import PositionMonitor
+from trader.llm.schemas import (
+    BrainDecision,
+    DerivativesReport,
+    MacroNewsReport,
+    PositionReview,
+    TechnicalReport,
+)
 from trader.risk.gate import RiskGate
+from trader.risk.lesson_filter import LessonFilterResult
 from trader.risk.models import (
     AccountState,
     DecisionInput,
     LessonCheckInput,
     MarketState,
+    RiskVerdict,
 )
 from trader.risk.price_shock import compute_price_shock_signals
 
@@ -79,9 +101,14 @@ def _make_shock_cfg(**overrides) -> PriceShockSettings:
 
 def _make_decision(**overrides) -> DecisionInput:
     base = dict(
-        action="LONG", symbol="XRP/USDT:USDT", side="long",
-        entry_price=0.5, stop_loss=0.45, take_profit=0.65,
-        confidence=0.85, confluence_score=4,
+        action="LONG",
+        symbol="XRP/USDT:USDT",
+        side="long",
+        entry_price=0.5,
+        stop_loss=0.45,
+        take_profit=0.65,
+        confidence=0.85,
+        confluence_score=4,
     )
     base.update(overrides)
     return DecisionInput(**base)
@@ -89,20 +116,34 @@ def _make_decision(**overrides) -> DecisionInput:
 
 def _make_account() -> AccountState:
     return AccountState(
-        equity_usd=100.0, daily_loss_usd=0.0, weekly_loss_usd=0.0,
-        consecutive_losses=0, last_loss_ts=None, open_positions=0,
-        trades_today=0, llm_cost_today_usd=0.0,
+        equity_usd=100.0,
+        daily_loss_usd=0.0,
+        weekly_loss_usd=0.0,
+        consecutive_losses=0,
+        last_loss_ts=None,
+        open_positions=0,
+        trades_today=0,
+        llm_cost_today_usd=0.0,
     )
 
 
 def _make_market(**overrides) -> MarketState:
     base = dict(
-        symbol="XRP/USDT:USDT", live_price=0.5, snapshot_price=0.5,
-        atr_14=0.01, spread_pct=0.001, funding_rate=0.0001,
-        next_funding_ts=None, data_age_seconds=5.0, clock_drift_ms=0.0,
-        is_macro_blackout=False, macro_blackout_name="",
-        is_exchange_blackout=False, exchange_blackout_reason="",
-        price_shock_active=False, price_shock_block_until=None,
+        symbol="XRP/USDT:USDT",
+        live_price=0.5,
+        snapshot_price=0.5,
+        atr_14=0.01,
+        spread_pct=0.001,
+        funding_rate=0.0001,
+        next_funding_ts=None,
+        data_age_seconds=5.0,
+        clock_drift_ms=0.0,
+        is_macro_blackout=False,
+        macro_blackout_name="",
+        is_exchange_blackout=False,
+        exchange_blackout_reason="",
+        price_shock_active=False,
+        price_shock_block_until=None,
     )
     base.update(overrides)
     return MarketState(**base)
@@ -240,7 +281,9 @@ class TestPositionMonitorPaperBroker:
     def test_never_widens_sl(self):
         """If computed new SL would widen, broker.amend_stop_loss returns False."""
         broker = self._make_broker_with_position(side="buy", entry=1.0, sl=0.8)
-        cfg = _make_shock_cfg(move_sl_to_breakeven_on_favorable_shock=False, open_position_risk_cut_pct=0.0)
+        cfg = _make_shock_cfg(
+            move_sl_to_breakeven_on_favorable_shock=False, open_position_risk_cut_pct=0.0
+        )
         monitor = PositionMonitor(broker, cfg)
 
         # With pct=0 adverse: no change; with no breakeven favorable: no change
@@ -299,14 +342,16 @@ class TestPositionMonitorMockedLiveAdapter:
         qty: float = 10.0,
     ) -> MagicMock:
         mock_adapter = MagicMock()
-        mock_adapter.get_positions.return_value = [{
-            "symbol": "XRP/USDT:USDT",
-            "side": side,
-            "qty": qty,
-            "entry_price": entry,
-            "unrealised_pnl": 0.0,
-            "sl_price": sl,
-        }]
+        mock_adapter.get_positions.return_value = [
+            {
+                "symbol": "XRP/USDT:USDT",
+                "side": side,
+                "qty": qty,
+                "entry_price": entry,
+                "unrealised_pnl": 0.0,
+                "sl_price": sl,
+            }
+        ]
         mock_adapter.amend_stop_loss.return_value = True
         return mock_adapter
 
@@ -316,7 +361,7 @@ class TestPositionMonitorMockedLiveAdapter:
         cfg = _make_shock_cfg(open_position_risk_cut_pct=50.0)
         monitor = PositionMonitor(mock_adapter, cfg)
 
-        results = monitor.monitor_shock("XRP/USDT:USDT", price_5m_return=-2.0, price_1m_return=None)
+        monitor.monitor_shock("XRP/USDT:USDT", price_5m_return=-2.0, price_1m_return=None)
 
         mock_adapter.amend_stop_loss.assert_called_once()
         call_args = mock_adapter.amend_stop_loss.call_args
@@ -330,7 +375,7 @@ class TestPositionMonitorMockedLiveAdapter:
         cfg = _make_shock_cfg(move_sl_to_breakeven_on_favorable_shock=True)
         monitor = PositionMonitor(mock_adapter, cfg)
 
-        results = monitor.monitor_shock("XRP/USDT:USDT", price_5m_return=2.0, price_1m_return=None)
+        monitor.monitor_shock("XRP/USDT:USDT", price_5m_return=2.0, price_1m_return=None)
 
         mock_adapter.amend_stop_loss.assert_called_once()
         call_args = mock_adapter.amend_stop_loss.call_args
@@ -371,10 +416,17 @@ class TestPaperBrokerAmendStopLoss:
         b = PaperBroker(initial_balance=10_000.0)
         b._mark_prices["XRP/USDT:USDT"] = entry
         b._positions["XRP/USDT:USDT"] = {
-            "symbol": "XRP/USDT:USDT", "side": "buy", "qty": 10.0,
-            "entry_price": entry, "margin": 1.0, "sl_price": sl,
-            "tp_price": None, "open_ts": None,
-            "max_adverse_excursion": 0.0, "max_favorable_excursion": 0.0, "funding_paid": 0.0,
+            "symbol": "XRP/USDT:USDT",
+            "side": "buy",
+            "qty": 10.0,
+            "entry_price": entry,
+            "margin": 1.0,
+            "sl_price": sl,
+            "tp_price": None,
+            "open_ts": None,
+            "max_adverse_excursion": 0.0,
+            "max_favorable_excursion": 0.0,
+            "funding_paid": 0.0,
         }
         return b
 
@@ -396,14 +448,22 @@ class TestPaperBrokerAmendStopLoss:
     def test_amend_short_sl_down_succeeds(self):
         b = PaperBroker(initial_balance=10_000.0)
         b._positions["XRP/USDT:USDT"] = {
-            "side": "sell", "qty": 10.0, "entry_price": 1.0, "margin": 1.0, "sl_price": 1.2,
+            "side": "sell",
+            "qty": 10.0,
+            "entry_price": 1.0,
+            "margin": 1.0,
+            "sl_price": 1.2,
         }
         assert b.amend_stop_loss("XRP/USDT:USDT", 1.1) is True
 
     def test_amend_short_sl_up_rejected(self):
         b = PaperBroker(initial_balance=10_000.0)
         b._positions["XRP/USDT:USDT"] = {
-            "side": "sell", "qty": 10.0, "entry_price": 1.0, "margin": 1.0, "sl_price": 1.2,
+            "side": "sell",
+            "qty": 10.0,
+            "entry_price": 1.0,
+            "margin": 1.0,
+            "sl_price": 1.2,
         }
         assert b.amend_stop_loss("XRP/USDT:USDT", 1.3) is False
 
@@ -422,10 +482,14 @@ class TestShockEndToEnd:
         result = compute_price_shock_signals(
             price_1m_return=None,
             price_5m_return=3.0,  # extreme trigger
-            atr_current=None, atr_baseline=None,
-            volume_current=None, volume_baseline=None,
-            spread_pct_current=None, spread_pct_baseline=None,
-            liquidation_volume_current=None, liquidation_volume_baseline=None,
+            atr_current=None,
+            atr_baseline=None,
+            volume_current=None,
+            volume_baseline=None,
+            spread_pct_current=None,
+            spread_pct_baseline=None,
+            liquidation_volume_current=None,
+            liquidation_volume_baseline=None,
             min_signals_to_trigger=shock_cfg.min_signals_to_trigger,
             extreme_5m_return_pct=shock_cfg.extreme_5m_return_pct,
             price_1m_return_pct=shock_cfg.price_1m_return_pct,
@@ -439,7 +503,9 @@ class TestShockEndToEnd:
 
         # Step 2: persist shock_until in system_state
         helper = SystemStateHelper(db_session)
-        shock_until = datetime.datetime.now(datetime.UTC) + datetime.timedelta(minutes=shock_cfg.block_minutes)
+        shock_until = datetime.datetime.now(datetime.UTC) + datetime.timedelta(
+            minutes=shock_cfg.block_minutes
+        )
         helper.set_shock_until(shock_until)
         db_session.commit()
 
@@ -452,7 +518,9 @@ class TestShockEndToEnd:
             price_shock_active=True,
             price_shock_block_until=helper.get_shock_until(),
         )
-        verdict_blocked = gate.evaluate(_make_decision(), _make_lesson(), _make_account(), market_blocked)
+        verdict_blocked = gate.evaluate(
+            _make_decision(), _make_lesson(), _make_account(), market_blocked
+        )
         assert verdict_blocked.approved is False
         assert "PRICE_SHOCK" in verdict_blocked.rules_failed
 
@@ -465,7 +533,9 @@ class TestShockEndToEnd:
             price_shock_active=True,  # flag still set (orchestrator hasn't cleared it)
             price_shock_block_until=helper.get_shock_until(),
         )
-        verdict_allowed = gate.evaluate(_make_decision(), _make_lesson(), _make_account(), market_expired)
+        verdict_allowed = gate.evaluate(
+            _make_decision(), _make_lesson(), _make_account(), market_expired
+        )
         assert "PRICE_SHOCK" not in verdict_allowed.rules_failed
 
     def test_shock_until_persisted_round_trips_correctly(self, db_session: Session):
@@ -490,10 +560,12 @@ class TestShockEndToEnd:
 def _run_block_sensitive(tool_name: str, file_path: str) -> tuple[int, str]:
     """Run block_sensitive.sh with a simulated Edit/Write PreToolUse JSON input."""
     hook = REPO_ROOT / ".claude" / "hooks" / "block_sensitive.sh"
-    payload = json.dumps({
-        "tool_name": tool_name,
-        "tool_input": {"file_path": file_path, "old_string": "x", "new_string": "y"},
-    })
+    payload = json.dumps(
+        {
+            "tool_name": tool_name,
+            "tool_input": {"file_path": file_path, "old_string": "x", "new_string": "y"},
+        }
+    )
     result = subprocess.run(
         ["bash", str(hook)],
         input=payload.encode(),
@@ -506,10 +578,12 @@ def _run_block_sensitive(tool_name: str, file_path: str) -> tuple[int, str]:
 def _run_block_bash(command: str) -> tuple[int, str]:
     """Run block_bash_writes.py with a simulated Bash PreToolUse JSON input."""
     hook = REPO_ROOT / ".claude" / "hooks" / "block_bash_writes.py"
-    payload = json.dumps({
-        "tool_name": "Bash",
-        "tool_input": {"command": command},
-    })
+    payload = json.dumps(
+        {
+            "tool_name": "Bash",
+            "tool_input": {"command": command},
+        }
+    )
     result = subprocess.run(
         [sys.executable, str(hook)],
         input=payload.encode(),
@@ -625,3 +699,331 @@ class TestHookBlocksBashWrites:
     def test_redirect_to_non_protected_allowed(self):
         code, _ = _run_block_bash("echo 'test' > /tmp/output.txt")
         assert code == 0
+
+
+# ===========================================================================
+# 5a: No deprecated datetime.utcnow() or datetime.utcfromtimestamp() in src/ or tests/
+# ===========================================================================
+
+
+class TestNoNaiveDatetimeCalls:
+    """Scan all Python source files for the deprecated datetime.utcnow() and
+    datetime.utcfromtimestamp() calls. These return naive datetimes and are
+    deprecated in Python 3.12. All production code must use timezone-aware calls.
+
+    The scan checks for the method call patterns .utcnow( and .utcfromtimestamp(
+    on non-comment lines. Helper functions named _utcnow() are fine — they call
+    datetime.now(UTC) internally and do not contain the banned dot-access pattern.
+    """
+
+    def _scan(self, patterns: list[str]) -> list[str]:
+        _this_file = Path(__file__).resolve()
+        violations: list[str] = []
+        for root in (REPO_ROOT / "src", REPO_ROOT / "tests"):
+            if not root.exists():
+                continue
+            for path in sorted(root.rglob("*.py")):
+                if path.resolve() == _this_file:
+                    continue  # skip self (docstrings reference the banned pattern)
+                try:
+                    lines = path.read_text(encoding="utf-8").splitlines()
+                except OSError:
+                    continue
+                for lineno, line in enumerate(lines, 1):
+                    stripped = line.lstrip()
+                    if stripped.startswith("#"):
+                        continue  # skip pure comment lines
+                    for pat in patterns:
+                        if re.search(pat, line):
+                            violations.append(
+                                f"{path.relative_to(REPO_ROOT)}:{lineno}: {line.rstrip()}"
+                            )
+        return violations
+
+    def test_no_utcnow_method_calls(self):
+        """No .utcnow( method calls anywhere in src/ or tests/."""
+        violations = self._scan([r"\.utcnow\("])
+        assert not violations, (
+            "Deprecated datetime.utcnow() calls found — use datetime.now(datetime.UTC):\n"
+            + "\n".join(violations)
+        )
+
+    def test_no_utcfromtimestamp_method_calls(self):
+        """No .utcfromtimestamp( method calls anywhere in src/ or tests/."""
+        violations = self._scan([r"\.utcfromtimestamp\("])
+        assert not violations, (
+            "Deprecated datetime.utcfromtimestamp() calls found — "
+            "use datetime.fromtimestamp(ts, tz=datetime.UTC):\n" + "\n".join(violations)
+        )
+
+
+# ===========================================================================
+# 5b: macro_calendar_stale → Risk Gate (orchestrator) rejects entry
+# ===========================================================================
+
+
+def _make_orchestrator_for_5b(settings: Settings | None = None) -> TradeCycleOrchestrator:
+    if settings is None:
+        settings = Settings(
+            trading_mode="paper",
+            app=AppSettings(
+                models=ModelNames(screening="m", decision="m", review="m"),
+                trading=TradingConfig(symbols=["XRP/USDT:USDT"]),
+            ),
+            risk=RiskSettings(
+                max_margin_per_trade_usd=2.0,
+                max_loss_per_trade_usd=1.0,
+                daily_loss_limit_usd=3.0,
+                allowed_symbols=["XRP/USDT:USDT"],
+                total_llm_budget_usd_per_day=5.0,
+            ),
+        )
+    macro_analyst = MagicMock()
+    macro_analyst.analyze.return_value = MacroNewsReport(
+        agent="MacroNewsAnalyst", bias="neutral", confidence=0.5
+    )
+    technical_analyst = MagicMock()
+    technical_analyst.analyze.return_value = TechnicalReport(
+        agent="TechnicalAnalyst", bias="neutral", confidence=0.5
+    )
+    derivatives_analyst = MagicMock()
+    derivatives_analyst.analyze.return_value = DerivativesReport(
+        agent="DerivativesAnalyst", bias="neutral", confidence=0.5
+    )
+    decision_agent = MagicMock()
+    decision_agent.decide.return_value = BrainDecision(action="NO_TRADE")
+    position_reviewer = MagicMock()
+    position_reviewer.review.return_value = PositionReview(action="HOLD", reason="none")
+    lesson_filter = MagicMock()
+    lesson_filter.evaluate.return_value = LessonFilterResult(
+        blocked=False,
+        confidence_penalty=0.0,
+        matched_lessons=[],
+        require_extra_confirmation=False,
+        details=[],
+    )
+    risk_gate = MagicMock()
+    risk_gate.evaluate.return_value = RiskVerdict(
+        approved=False,
+        adjusted_size=None,
+        rules_failed=["MACRO_STALE"],
+        loss_at_stop_usd=None,
+        liq_price=None,
+        entry_drift_pct=None,
+        reject_reason="MACRO_STALE",
+    )
+    risk_gate._kill_switch_on = False
+    return TradeCycleOrchestrator(
+        settings=settings,
+        macro_analyst=macro_analyst,
+        technical_analyst=technical_analyst,
+        derivatives_analyst=derivatives_analyst,
+        decision_agent=decision_agent,
+        position_reviewer=position_reviewer,
+        lesson_filter=lesson_filter,
+        risk_gate=risk_gate,
+        ksor_retriever=None,
+        session_factory=None,
+        analyst_timeout_seconds=5.0,
+        cycle_timeout_seconds=30.0,
+    )
+
+
+class TestMacroCalendarStaleBlocksEntry:
+    """5b: When macro calendar has no high-impact events in next 14 days,
+    data_quality_flag 'macro_calendar_stale' is emitted and the orchestrator
+    stops at 'data_quality' (blocking new entry without calling analysts).
+    """
+
+    def test_stale_calendar_emits_quality_flag(self):
+        """MacroCalendar with no high-impact events in next 14 days emits macro_calendar_stale."""
+        # January 2027: all hardcoded 2026 events are in the past
+        jan_2027 = datetime.datetime(2027, 1, 15, 12, 0, 0, tzinfo=datetime.UTC)
+        with patch("trader.data.macro.datetime") as mock_dt:
+            mock_dt.datetime.now.return_value = jan_2027
+            mock_dt.timedelta = datetime.timedelta
+            mock_dt.UTC = datetime.UTC
+            cal = MacroCalendar()
+            result = cal.collect()
+
+        assert "macro_calendar_stale" in result.quality_flags, (
+            "MacroCalendar must emit 'macro_calendar_stale' when no high-impact event "
+            "covers the next 14 days (Jan 2027 scenario)"
+        )
+
+    def test_orchestrator_rejects_when_macro_calendar_stale(self):
+        """Orchestrator returns stopped_at='data_quality' when macro_calendar_stale is in flags."""
+        orch = _make_orchestrator_for_5b()
+        result = asyncio.get_event_loop().run_until_complete(
+            orch.run_cycle(
+                "XRP/USDT:USDT",
+                "candle_close",
+                feature_pack={"data_quality_flags": ["macro_calendar_stale"]},
+            )
+        )
+        assert result.action == "NO_TRADE"
+        assert result.stopped_at == "data_quality"
+        orch._macro_analyst.analyze.assert_not_called()
+        orch._decision_agent.decide.assert_not_called()
+
+    def test_stale_flag_end_to_end(self):
+        """Full chain: stale MacroCalendar → flag → orchestrator stops at data_quality."""
+        jan_2027 = datetime.datetime(2027, 1, 15, 12, 0, 0, tzinfo=datetime.UTC)
+        with patch("trader.data.macro.datetime") as mock_dt:
+            mock_dt.datetime.now.return_value = jan_2027
+            mock_dt.timedelta = datetime.timedelta
+            mock_dt.UTC = datetime.UTC
+            cal = MacroCalendar()
+            collector_result = cal.collect()
+
+        assert "macro_calendar_stale" in collector_result.quality_flags
+
+        orch = _make_orchestrator_for_5b()
+        result = asyncio.get_event_loop().run_until_complete(
+            orch.run_cycle(
+                "XRP/USDT:USDT",
+                "candle_close",
+                feature_pack={"data_quality_flags": collector_result.quality_flags},
+            )
+        )
+        assert result.stopped_at == "data_quality"
+
+
+# ===========================================================================
+# PositionMonitor failure handling: risk_event + halt on 2nd adverse failure
+# ===========================================================================
+
+
+def _make_pm_session_factory() -> Any:
+    """Create an in-memory SQLite sessionmaker for PositionMonitor tests."""
+    engine = create_engine("sqlite:///:memory:", echo=False)
+    Base.metadata.create_all(engine)
+    return sessionmaker(bind=engine)
+
+
+def _make_mock_adapter_failing(
+    side: str = "long",
+    entry: float = 1.0,
+    sl: float = 0.8,
+    qty: float = 10.0,
+) -> MagicMock:
+    """Mock broker with one open position; amend_stop_loss always returns False."""
+    adapter = MagicMock()
+    adapter.get_positions.return_value = [
+        {
+            "symbol": "XRP/USDT:USDT",
+            "side": side,
+            "qty": qty,
+            "entry_price": entry,
+            "unrealised_pnl": 0.0,
+            "sl_price": sl,
+        }
+    ]
+    adapter.amend_stop_loss.return_value = False
+    return adapter
+
+
+class TestPositionMonitorFailureHandling:
+    """Verify risk_event writing and halt behaviour on repeated adverse-shock SL failures."""
+
+    def test_first_adverse_failure_writes_sl_amend_failure_event(self):
+        """1st adverse-shock amend failure → SL_AMEND_FAILURE risk_event written to DB."""
+        factory = _make_pm_session_factory()
+        broker = _make_mock_adapter_failing(side="long", entry=1.0, sl=0.8)
+        cfg = _make_shock_cfg(open_position_risk_cut_pct=50.0)
+        monitor = PositionMonitor(broker, cfg, session_factory=factory)
+
+        results = monitor.monitor_shock("XRP/USDT:USDT", price_5m_return=-2.0, price_1m_return=None)
+
+        assert len(results) == 1
+        assert results[0]["amended"] is False
+        assert results[0]["reason"] == "amendment_rejected_by_broker"
+
+        with factory() as session:
+            events = session.query(RiskEvent).filter_by(type="SL_AMEND_FAILURE").all()
+        assert len(events) == 1
+        assert "XRP/USDT:USDT" in events[0].details
+        assert "adverse_fail_count=1" in events[0].details
+
+    def test_second_adverse_failure_triggers_halt_and_close(self):
+        """2nd consecutive adverse-shock failure → SL_AMEND_HALT event + emergency close + kill switch."""
+        factory = _make_pm_session_factory()
+        broker = _make_mock_adapter_failing(side="long", entry=1.0, sl=0.8)
+        cfg = _make_shock_cfg(open_position_risk_cut_pct=50.0)
+        monitor = PositionMonitor(broker, cfg, session_factory=factory)
+
+        # 1st failure
+        monitor.monitor_shock("XRP/USDT:USDT", price_5m_return=-2.0, price_1m_return=None)
+        # 2nd failure
+        results2 = monitor.monitor_shock(
+            "XRP/USDT:USDT", price_5m_return=-3.0, price_1m_return=None
+        )
+
+        assert len(results2) == 1
+        assert results2[0]["reason"] == "halt_emergency_close"
+
+        # Emergency close (place_order) must have been called
+        broker.place_order.assert_called_once()
+        call = broker.place_order.call_args
+        assert (
+            call.kwargs.get("reduce_only") is True
+            or (len(call.args) >= 6 and call.args[5] is True)
+            or call.kwargs.get("reduce_only") is True
+        )
+
+        # Kill switch must be set in DB
+        from trader.dsor.system_state import SystemStateHelper  # noqa: PLC0415
+
+        with factory() as session:
+            helper = SystemStateHelper(session)
+            assert helper.is_kill_switch_on() is True
+
+        # SL_AMEND_HALT event must be written
+        with factory() as session:
+            halt_events = session.query(RiskEvent).filter_by(type="SL_AMEND_HALT").all()
+        assert len(halt_events) == 1
+
+    def test_non_adverse_failure_no_sl_amend_failure_event(self):
+        """SL amend failure on a FAVORABLE shock does NOT write SL_AMEND_FAILURE."""
+        factory = _make_pm_session_factory()
+        broker = _make_mock_adapter_failing(side="long", entry=1.0, sl=0.8)
+        cfg = _make_shock_cfg(move_sl_to_breakeven_on_favorable_shock=True)
+        monitor = PositionMonitor(broker, cfg, session_factory=factory)
+
+        # price_5m_return > 0 → favorable for long → not adverse
+        monitor.monitor_shock("XRP/USDT:USDT", price_5m_return=2.0, price_1m_return=None)
+
+        with factory() as session:
+            events = session.query(RiskEvent).filter_by(type="SL_AMEND_FAILURE").all()
+        assert len(events) == 0, "Non-adverse failure must not write SL_AMEND_FAILURE"
+
+    def test_success_after_failure_resets_count(self):
+        """Successful amendment resets the consecutive failure counter."""
+        factory = _make_pm_session_factory()
+        broker = _make_mock_adapter_failing(side="long", entry=1.0, sl=0.8)
+        cfg = _make_shock_cfg(open_position_risk_cut_pct=50.0)
+        monitor = PositionMonitor(broker, cfg, session_factory=factory)
+
+        # 1st failure
+        monitor.monitor_shock("XRP/USDT:USDT", price_5m_return=-2.0, price_1m_return=None)
+        assert monitor._adverse_fail_count.get("XRP/USDT:USDT") == 1
+
+        # Success
+        broker.amend_stop_loss.return_value = True
+        monitor.monitor_shock("XRP/USDT:USDT", price_5m_return=-1.0, price_1m_return=None)
+        assert monitor._adverse_fail_count.get("XRP/USDT:USDT") is None
+
+        # Next failure starts from 1 again (not 2)
+        broker.amend_stop_loss.return_value = False
+        monitor.monitor_shock("XRP/USDT:USDT", price_5m_return=-2.0, price_1m_return=None)
+        assert monitor._adverse_fail_count.get("XRP/USDT:USDT") == 1
+        broker.place_order.assert_not_called()  # no halt yet
+
+    def test_no_session_factory_does_not_crash(self):
+        """With no session_factory, failure handling logs a warning but does not crash."""
+        broker = _make_mock_adapter_failing(side="long", entry=1.0, sl=0.8)
+        cfg = _make_shock_cfg(open_position_risk_cut_pct=50.0)
+        monitor = PositionMonitor(broker, cfg, session_factory=None)
+
+        results = monitor.monitor_shock("XRP/USDT:USDT", price_5m_return=-2.0, price_1m_return=None)
+        assert results[0]["amended"] is False  # failure recorded but no crash

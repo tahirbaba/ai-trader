@@ -319,38 +319,154 @@ class LiveAdapter(ExchangeAdapter):
         except Exception:
             return False
 
-    def amend_stop_loss(self, symbol: str, new_sl: float) -> bool:
-        """Cancel existing stop order, place new one, verify it landed.
+    # ------------------------------------------------------------------
+    # SL amendment helpers (fail-closed)
+    # ------------------------------------------------------------------
 
-        Returns True only if the new stop order is verified on the exchange.
-        Never widens: compares new_sl against current open stop orders.
+    def _find_sl_order_to_cancel(
+        self, is_long: bool, open_orders: list[dict[str, Any]]
+    ) -> dict[str, Any] | None:
+        """Return the stop order to cancel: strict reduceOnly==True on close side.
+
+        Only matches reduceOnly is True (not None, not False) to avoid canceling
+        entry-side or ambiguously-flagged orders.
+        """
+        stop_types = {"stop", "stop_market", "stop_limit"}
+        expected_side = "sell" if is_long else "buy"
+        for o in open_orders:
+            if (
+                o.get("type") in stop_types
+                and o.get("reduceOnly") is True
+                and o.get("side", "").lower() == expected_side
+            ):
+                return o
+        return None
+
+    def _conservative_existing_sl(
+        self, is_long: bool, pos_stop_loss_raw: Any, open_orders: list[dict[str, Any]]
+    ) -> float:
+        """Conservative never-widen baseline.
+
+        1. Primary: position's stopLoss field (Bybit v5).
+        2. Secondary: any stop-type order on the close side, regardless of reduceOnly.
+           (reduceOnly=None/True/False — we treat any close-side stop conservatively.)
+
+        Returns 0.0 if no baseline can be determined.
+        """
+        # Primary: position's stopLoss field
+        if pos_stop_loss_raw is not None:
+            try:
+                v = float(pos_stop_loss_raw)
+                if v > 0:
+                    return v
+            except (TypeError, ValueError):
+                pass
+
+        # Secondary: any stop order on the close side (conservative)
+        stop_types = {"stop", "stop_market", "stop_limit"}
+        expected_side = "sell" if is_long else "buy"
+        for o in open_orders:
+            if o.get("type") in stop_types and o.get("side", "").lower() == expected_side:
+                raw_sp = o.get("stopPrice") or o.get("price") or 0
+                try:
+                    sp = float(raw_sp)
+                    if sp > 0:
+                        return sp
+                except (TypeError, ValueError):
+                    pass
+
+        return 0.0
+
+    def _verify_sl_placed(
+        self,
+        symbol: str,
+        new_sl: float,
+        is_long: bool,
+        qty: float,
+    ) -> bool:
+        """Fail-closed SL verification — unknown = not verified.
+
+        Primary: position's stopLoss field from fetch_positions (Bybit v5).
+        Secondary: open conditional order that is reduceOnly==True, correct
+        close-side, qty within 0.1%, trigger price within 0.1%.
+
+        Returns True only when one source positively confirms the SL.
+        """
+        # Primary: position's stopLoss field
+        try:
+            positions = self._exchange.fetch_positions([symbol])
+            for p in positions:
+                if p.get("symbol") == symbol and p.get("contracts", 0):
+                    raw = p.get("stopLoss")
+                    if raw is not None:
+                        try:
+                            pos_sl = float(raw)
+                            if pos_sl > 0 and abs(pos_sl - new_sl) / new_sl <= 0.001:
+                                return True
+                        except (TypeError, ValueError, ZeroDivisionError):
+                            pass
+                    break
+        except Exception:
+            pass
+
+        # Secondary: open conditional order with strict criteria
+        stop_types = {"stop", "stop_market", "stop_limit"}
+        sl_side = "sell" if is_long else "buy"
+        try:
+            orders = self._exchange.fetch_open_orders(symbol)
+            for o in orders:
+                if o.get("type") not in stop_types:
+                    continue
+                if o.get("reduceOnly") is not True:  # strict: must be True
+                    continue
+                if o.get("side", "").lower() != sl_side:
+                    continue
+                try:
+                    sp = float(o.get("stopPrice") or o.get("price") or 0)
+                except (TypeError, ValueError):
+                    continue
+                if sp <= 0 or abs(sp - new_sl) / new_sl > 0.001:
+                    continue
+                try:
+                    order_qty = float(o.get("amount") or o.get("qty") or 0)
+                except (TypeError, ValueError):
+                    continue
+                if order_qty <= 0 or abs(order_qty - qty) / qty > 0.001:
+                    continue
+                return True
+        except Exception:
+            pass
+
+        return False  # unknown = not verified
+
+    def amend_stop_loss(self, symbol: str, new_sl: float) -> bool:
+        """Amend SL on open position (reduceOnly). Fail-closed verification.
+
+        Never widens:
+          Primary baseline: position's stopLoss field from fetch_positions.
+          Secondary baseline: open stop order with reduceOnly==True (strict).
+
+        After placing the new SL (once), verifies via the same primary/secondary
+        sources. Anything unknown = NOT verified → emergency market close
+        (reduceOnly) + return False.
         """
         import logging  # noqa: PLC0415
 
         _log = logging.getLogger(__name__)
 
-        try:
-            # Find existing stop order for this symbol
-            open_orders = self._exchange.fetch_open_orders(symbol)
-        except Exception as exc:
-            _log.warning("amend_stop_loss: fetch_open_orders failed: %s", exc)
+        if new_sl <= 0:
             return False
 
-        stop_types = {"stop", "stop_market", "stop_limit"}
-        existing_stop: dict[str, Any] | None = None
-        for o in open_orders:
-            if o.get("type") in stop_types and o.get("reduceOnly") is not False:
-                existing_stop = o
-                break
-
-        # Determine side and qty from positions
+        # 1. Fetch position — primary source for side, qty, existing SL
         try:
             positions = self._exchange.fetch_positions([symbol])
         except Exception as exc:
-            _log.warning("amend_stop_loss: fetch_positions failed: %s", exc)
+            _log.warning(
+                "amend_stop_loss: fetch_positions failed for %s: %s", symbol, type(exc).__name__
+            )
             return False
 
-        pos = None
+        pos: dict[str, Any] | None = None
         for p in positions:
             if p.get("symbol") == symbol and p.get("contracts", 0):
                 pos = p
@@ -360,30 +476,45 @@ class LiveAdapter(ExchangeAdapter):
 
         side_raw = pos.get("side", "").lower()
         is_long = side_raw in {"long", "buy"}
-
-        # Never widen
-        if existing_stop is not None:
-            old_stop_price = float(
-                existing_stop.get("stopPrice") or existing_stop.get("price") or 0.0
-            )
-            if old_stop_price > 0:
-                if is_long and new_sl <= old_stop_price:
-                    return False
-                if not is_long and new_sl >= old_stop_price:
-                    return False
-
-        qty = float(pos.get("contracts", 0) or pos.get("qty", 0))
+        qty = float(pos.get("contracts", 0) or 0)
         if qty <= 0:
             return False
 
-        # Cancel existing stop
-        if existing_stop is not None:
-            try:
-                self._exchange.cancel_order(existing_stop["id"], symbol)
-            except Exception as exc:
-                _log.warning("amend_stop_loss: cancel existing stop failed: %s", exc)
+        # 2. Fetch open orders once — used for never-widen baseline AND for finding
+        #    the stop order to cancel. Done BEFORE placement, not after.
+        try:
+            open_orders: list[dict[str, Any]] = self._exchange.fetch_open_orders(symbol)
+        except Exception as exc:
+            _log.warning(
+                "amend_stop_loss: fetch_open_orders failed for %s: %s", symbol, type(exc).__name__
+            )
+            open_orders = []
 
-        # Place new stop
+        # 3a. Conservative never-widen baseline (position's stopLoss OR any close-side stop)
+        existing_sl = self._conservative_existing_sl(is_long, pos.get("stopLoss"), open_orders)
+
+        # Apply never-widen
+        if existing_sl > 0:
+            if is_long and new_sl <= existing_sl:
+                return False
+            if not is_long and new_sl >= existing_sl:
+                return False
+
+        # 3b. Find the stop order to cancel (strict: reduceOnly==True only)
+        stop_to_cancel = self._find_sl_order_to_cancel(is_long, open_orders)
+
+        # 4. Cancel existing stop (best-effort — do not abort if cancel fails)
+        if stop_to_cancel is not None:
+            try:
+                self._exchange.cancel_order(stop_to_cancel["id"], symbol)
+            except Exception as exc:
+                _log.warning(
+                    "amend_stop_loss: cancel existing stop failed for %s: %s",
+                    symbol,
+                    type(exc).__name__,
+                )
+
+        # 5. Place new stop (exactly once)
         sl_side = "sell" if is_long else "buy"
         try:
             self._exchange.create_order(
@@ -395,23 +526,32 @@ class LiveAdapter(ExchangeAdapter):
                 {"stopPrice": new_sl, "reduceOnly": True},
             )
         except Exception as exc:
-            _log.error("amend_stop_loss: place new stop failed: %s", exc)
+            _log.error(
+                "amend_stop_loss: place new stop failed for %s: %s", symbol, type(exc).__name__
+            )
             return False
 
-        # Verify the new stop exists
+        # 6. Verify (fail-closed: unknown = not verified)
+        if self._verify_sl_placed(symbol, new_sl, is_long, qty):
+            return True
+
+        # 7. Verification failed → emergency market close (reduceOnly) + return False
+        _log.critical(
+            "amend_stop_loss: SL verification failed for %s after placement — "
+            "executing emergency market close (reduceOnly)",
+            symbol,
+        )
+        close_side = "sell" if is_long else "buy"
         try:
-            updated_orders = self._exchange.fetch_open_orders(symbol)
-        except Exception:
-            return False
-
-        for o in updated_orders:
-            if o.get("type") not in stop_types:
-                continue
-            if not o.get("reduceOnly", False):
-                continue
-            sp = float(o.get("stopPrice") or o.get("price") or 0.0)
-            if sp > 0 and abs(sp - new_sl) / new_sl <= 0.001:
-                return True
+            self._exchange.create_order(
+                symbol, "market", close_side, qty, None, {"reduceOnly": True}
+            )
+        except Exception as close_exc:
+            _log.critical(
+                "amend_stop_loss: emergency close ALSO failed for %s: %s",
+                symbol,
+                type(close_exc).__name__,
+            )
         return False
 
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Callable
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from trader.execution.adapter import ExchangeAdapter
@@ -35,7 +35,7 @@ class PaperBroker(ExchangeAdapter):
         self._maker_fee = maker_fee
         self._taker_fee = taker_fee
         self._slippage_pct = slippage_pct
-        self._clock_fn: Callable[[], datetime] = clock_fn or (lambda: datetime.utcnow())
+        self._clock_fn: Callable[[], datetime] = clock_fn or (lambda: datetime.now(UTC))
 
         # Balance tracking
         self._cash: float = initial_balance
