@@ -25,11 +25,22 @@ logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Feed URLs (no auth required)
+# Decision-path feeds: real-time RSS only. NEWS_API_KEY (NewsAPI.org, ~24h delayed)
+# must NOT be used in live/paper decision path — research only.
 # ---------------------------------------------------------------------------
 _FEED_URLS: list[tuple[str, str]] = [
     ("https://cryptopanic.com/news/rss/", "CryptoPanic"),
     ("https://www.coindesk.com/arc/outboundfeeds/rss/", "CoinDesk"),
+    # Federal Reserve press releases (authoritative; low volume)
+    ("https://www.federalreserve.gov/feeds/press_monetary.xml", "FederalReserve"),
+    # The Block and Decrypt — crypto-native news
+    ("https://www.theblock.co/rss/all", "TheBlock"),
+    ("https://decrypt.co/feed", "Decrypt"),
 ]
+
+# Maximum item age for decision-path use. Older items are still returned in
+# data but flagged as context_only so the Brain treats them as background.
+_MAX_DECISION_AGE_MINUTES = 60
 
 # ---------------------------------------------------------------------------
 # Injection detection phrases
@@ -141,7 +152,7 @@ class NewsCollector:
 
     def collect(self) -> CollectorResult:
         """Fetch and return news items."""
-        now = datetime.datetime.utcnow()
+        now = datetime.datetime.now(datetime.UTC)
         items: list[dict[str, Any]] = []
         quality_flags: list[str] = []
 
@@ -157,7 +168,7 @@ class NewsCollector:
             )
 
         for entry in feed.entries:
-            source = feed._source_label  # type: ignore[attr-defined]
+            source = feed._source_label
             link: str = getattr(entry, "link", "") or ""
             published_parsed = getattr(entry, "published_parsed", None)
             published_iso = _parsed_to_iso(published_parsed)
@@ -175,11 +186,16 @@ class NewsCollector:
             ts_published: datetime.datetime
             if published_parsed:
                 try:
-                    ts_published = datetime.datetime(*published_parsed[:6])
+                    ts_published = datetime.datetime(*published_parsed[:6]).replace(
+                        tzinfo=datetime.UTC
+                    )
                 except Exception:  # noqa: BLE001
                     ts_published = now
             else:
                 ts_published = now
+
+            age_minutes = (now - ts_published).total_seconds() / 60.0
+            context_only = age_minutes > _MAX_DECISION_AGE_MINUTES
 
             items.append(
                 {
@@ -187,6 +203,8 @@ class NewsCollector:
                     "url": link,
                     "source": source,
                     "ts_published": ts_published,
+                    "age_minutes": round(age_minutes, 1),
+                    "context_only": context_only,
                     "summary": clean_summary,
                     "injection_flag": injection_flag,
                     "dedupe_hash": h,
@@ -216,7 +234,7 @@ class NewsCollector:
                 resp.raise_for_status()
                 feed = feedparser.parse(resp.content)
                 # Attach source label so the caller knows which feed was used
-                feed._source_label = source_label  # type: ignore[attr-defined]
+                feed._source_label = source_label
                 # Treat bozo (malformed feed) as a non-fatal warning
                 if getattr(feed, "bozo", False):
                     logger.warning(
@@ -235,3 +253,74 @@ class NewsCollector:
     def backfill(self, limit: int) -> list[CollectorResult]:
         """Not supported; returns empty list."""
         return []
+
+
+# ---------------------------------------------------------------------------
+# No-chase helper — pure function, no I/O
+# ---------------------------------------------------------------------------
+
+# High-impact keywords in news titles that may cause a directional price move.
+_BULLISH_KEYWORDS = frozenset(
+    ["rally", "surge", "breakout", "approved", "adoption", "bullish", "buy", "long"]
+)
+_BEARISH_KEYWORDS = frozenset(
+    ["crash", "ban", "hack", "fraud", "bearish", "sell", "short", "delisted", "seized"]
+)
+
+
+def compute_news_chase_block(
+    items: list[dict[str, Any]],
+    price_now: float,
+    price_at_signal: float,
+    atr: float | None,
+    no_chase_atr_multiple: float = 1.5,
+    max_item_age_minutes: float = 60.0,
+) -> tuple[bool, str]:
+    """Return (block, direction) if a recent item arrived and price already chased.
+
+    The check is:
+    1. At least one non-injection item exists within max_item_age_minutes.
+    2. abs(price_now - price_at_signal) > no_chase_atr_multiple * atr.
+    3. Direction of the move determines which side to block.
+
+    Parameters
+    ----------
+    items:
+        News items from NewsCollector.collect().
+    price_now:
+        Current live price.
+    price_at_signal:
+        Snapshot price or price at feature-pack build time (reference point).
+    atr:
+        Current ATR-14 (same unit as price).
+    no_chase_atr_multiple:
+        Block new entries when abs(move) > this multiple × ATR.
+    max_item_age_minutes:
+        Only consider items this fresh.
+
+    Returns
+    -------
+    (True, "long")   — price surged; block new longs (already chased up).
+    (True, "short")  — price dropped; block new shorts (already chased down).
+    (False, "")      — no chase detected.
+    """
+    if atr is None or atr <= 0 or price_now <= 0 or price_at_signal <= 0:
+        return False, ""
+
+    price_delta = price_now - price_at_signal
+    if abs(price_delta) <= no_chase_atr_multiple * atr:
+        return False, ""
+
+    # Price moved enough — check if any fresh non-injection item exists.
+    has_fresh_item = any(
+        not item.get("injection_flag")
+        and item.get("age_minutes", float("inf")) <= max_item_age_minutes
+        for item in items
+    )
+    if not has_fresh_item:
+        return False, ""
+
+    # Block the direction of the move.
+    if price_delta > 0:
+        return True, "long"  # price surged; block new longs
+    return True, "short"  # price fell; block new shorts

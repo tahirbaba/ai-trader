@@ -37,7 +37,7 @@ _REQUEST_TIMEOUT = 10
 
 def _utcnow() -> datetime.datetime:
     """Return current UTC time (injectable for testing)."""
-    return datetime.datetime.utcnow()
+    return datetime.datetime.now(datetime.UTC)
 
 
 def _is_traditional_market_open(now: datetime.datetime) -> bool:

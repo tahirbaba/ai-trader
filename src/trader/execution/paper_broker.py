@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Callable
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from trader.execution.adapter import ExchangeAdapter
@@ -35,7 +35,7 @@ class PaperBroker(ExchangeAdapter):
         self._maker_fee = maker_fee
         self._taker_fee = taker_fee
         self._slippage_pct = slippage_pct
-        self._clock_fn: Callable[[], datetime] = clock_fn or (lambda: datetime.utcnow())
+        self._clock_fn: Callable[[], datetime] = clock_fn or (lambda: datetime.now(UTC))
 
         # Balance tracking
         self._cash: float = initial_balance
@@ -101,6 +101,7 @@ class PaperBroker(ExchangeAdapter):
                     "qty": pos["qty"],
                     "entry_price": pos["entry_price"],
                     "unrealised_pnl": upnl,
+                    "sl_price": pos.get("sl_price"),
                 }
             )
         return result
@@ -267,6 +268,30 @@ class PaperBroker(ExchangeAdapter):
 
     def ping(self) -> bool:
         """Always true for paper broker."""
+        return True
+
+    def amend_stop_loss(self, symbol: str, new_sl: float) -> bool:
+        """Amend the stop-loss on an open position in paper trading.
+
+        Never widens: if the new SL would widen the existing SL, returns False.
+        Verification is implicit since state is in-memory.
+        """
+        if symbol not in self._positions:
+            return False
+        if new_sl <= 0:
+            return False
+        pos = self._positions[symbol]
+        current_sl = pos.get("sl_price")
+        if current_sl is None:
+            pos["sl_price"] = new_sl
+            return True
+        side = pos["side"].lower()
+        is_long = side in {"buy", "long"}
+        if is_long and new_sl <= current_sl:
+            return False  # would widen (long SL should only move up)
+        if not is_long and new_sl >= current_sl:
+            return False  # would widen (short SL should only move down)
+        pos["sl_price"] = new_sl
         return True
 
     # ------------------------------------------------------------------

@@ -48,7 +48,7 @@ class DataQualityMonitor:
             Threshold above which "clock_drift" is flagged.
         """
         flags: list[str] = []
-        now = datetime.datetime.utcnow()
+        now = datetime.datetime.now(datetime.UTC)
 
         # --- Staleness ---------------------------------------------------
         if latest_ts is None:

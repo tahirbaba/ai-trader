@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from trader.ksor.loader import KsorEntry
@@ -84,7 +84,7 @@ class KsorIndexer:
         query: str,
         status_filter: list[str] | None = None,
         limit: int = 20,
-    ) -> list[dict]:
+    ) -> list[dict[str, Any]]:
         """Full-text search over entry text.
 
         Parameters
@@ -104,7 +104,7 @@ class KsorIndexer:
                 JOIN ksor_meta m ON m.entry_id = f.entry_id
                 WHERE ksor_fts MATCH ?
             """
-            params: list = [query]
+            params: list[Any] = [query]
         else:
             sql = "SELECT m.* FROM ksor_meta m WHERE 1=1"
             params = []
@@ -121,11 +121,11 @@ class KsorIndexer:
         cols = [d[0] for d in cur.description]
         return [dict(zip(cols, row, strict=False)) for row in cur.fetchall()]
 
-    def get_all(self, status_filter: list[str] | None = None) -> list[dict]:
+    def get_all(self, status_filter: list[str] | None = None) -> list[dict[str, Any]]:
         """Return all entries (optionally filtered by status)."""
         conn = self._get_conn()
         sql = "SELECT * FROM ksor_meta"
-        params: list = []
+        params: list[Any] = []
         if status_filter:
             placeholders = ",".join("?" * len(status_filter))
             sql += f" WHERE status IN ({placeholders})"

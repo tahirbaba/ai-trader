@@ -5,7 +5,7 @@ from __future__ import annotations
 import contextlib
 import json
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from trader.ksor.loader import KsorEntry
 
@@ -145,7 +145,7 @@ class KsorRetriever:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _row_to_entry(row: dict) -> KsorEntry:
+    def _row_to_entry(row: dict[str, Any]) -> KsorEntry:
         """Convert a ksor_meta row dict to a KsorEntry."""
         rule = None
         if row.get("rule_json"):

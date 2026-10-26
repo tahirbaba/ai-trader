@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel
 
@@ -49,7 +49,7 @@ class BrainDecision(BaseModel):
     confidence: float = 0.0
     thesis: str = ""
     signals_used: list[str] = []
-    lessons_considered: list[dict] = []
+    lessons_considered: list[dict[str, Any]] = []
     data_missing: list[str] = []
     why_not_no_trade: str = ""
     expected_risk_reward: float = 0.0

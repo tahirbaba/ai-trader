@@ -62,3 +62,13 @@ class ExchangeAdapter(ABC):
 
     @abstractmethod
     def ping(self) -> bool: ...
+
+    @abstractmethod
+    def amend_stop_loss(self, symbol: str, new_sl: float) -> bool:
+        """Amend the stop-loss price on an open position (reduceOnly).
+
+        Returns True if the amendment was accepted, False otherwise.
+        Implementations must verify the amendment landed on the exchange
+        before returning True.
+        """
+        ...

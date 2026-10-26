@@ -36,3 +36,16 @@ min_confidence: 0.7
 min_confluence_score: 3
 allowed_symbols: ["XRP/USDT:USDT", "DOGE/USDT:USDT"]
 total_llm_budget_usd_per_day: 5.0
+
+price_shock:
+  min_signals_to_trigger: 2
+  extreme_5m_return_pct: 2.5
+  block_minutes: 30
+  price_1m_return_pct: 0.5
+  price_5m_return_pct: 1.0
+  atr_spike_multiple: 2.0
+  volume_spike_multiple: 3.0
+  spread_spike_pct: 0.3
+  liquidation_spike_multiple: 5.0
+  open_position_risk_cut_pct: 50
+  move_sl_to_breakeven_on_favorable_shock: true

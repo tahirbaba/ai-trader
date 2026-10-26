@@ -432,7 +432,7 @@ def test_consecutive_losses_rejects():
 def test_cooldown_rejects():
     gate = _make_gate()
     # Last loss was 30 minutes ago — within 60-minute cooldown
-    recent_loss = datetime.datetime.utcnow() - datetime.timedelta(minutes=30)
+    recent_loss = datetime.datetime.now(datetime.UTC) - datetime.timedelta(minutes=30)
     verdict = gate.evaluate(
         decision=_make_decision(),
         lesson_check=_make_lesson_check(),
@@ -446,7 +446,7 @@ def test_cooldown_rejects():
 def test_cooldown_expired_passes():
     gate = _make_gate()
     # Last loss was 90 minutes ago — cooldown expired
-    old_loss = datetime.datetime.utcnow() - datetime.timedelta(minutes=90)
+    old_loss = datetime.datetime.now(datetime.UTC) - datetime.timedelta(minutes=90)
     verdict = gate.evaluate(
         decision=_make_decision(),
         lesson_check=_make_lesson_check(),
@@ -657,7 +657,7 @@ def test_funding_window_against_long_rejects():
     """Within funding window AND negative funding (against longs) → FUNDING_WINDOW."""
     gate = _make_gate()
     # next_funding in 5 minutes (within 10-minute window), negative rate (against longs)
-    next_ts = datetime.datetime.utcnow() + datetime.timedelta(minutes=5)
+    next_ts = datetime.datetime.now(datetime.UTC) + datetime.timedelta(minutes=5)
     next_ts_utc = next_ts.replace(tzinfo=datetime.UTC)
     verdict = gate.evaluate(
         decision=_make_decision(action="LONG", side="long"),
@@ -675,7 +675,7 @@ def test_funding_window_against_long_rejects():
 def test_funding_window_against_short_rejects():
     """Within funding window AND positive funding (against shorts) → FUNDING_WINDOW."""
     gate = _make_gate()
-    next_ts = datetime.datetime.utcnow() + datetime.timedelta(minutes=5)
+    next_ts = datetime.datetime.now(datetime.UTC) + datetime.timedelta(minutes=5)
     next_ts_utc = next_ts.replace(tzinfo=datetime.UTC)
     verdict = gate.evaluate(
         decision=_make_decision(action="SHORT", side="short", stop_loss=0.55, take_profit=0.40),
@@ -693,7 +693,7 @@ def test_funding_window_against_short_rejects():
 def test_funding_window_not_against_long_passes():
     """Within window but funding is positive (favorable for longs) → NOT rejected."""
     gate = _make_gate()
-    next_ts = datetime.datetime.utcnow() + datetime.timedelta(minutes=5)
+    next_ts = datetime.datetime.now(datetime.UTC) + datetime.timedelta(minutes=5)
     next_ts_utc = next_ts.replace(tzinfo=datetime.UTC)
     verdict = gate.evaluate(
         decision=_make_decision(action="LONG", side="long"),
@@ -711,7 +711,7 @@ def test_funding_window_not_against_long_passes():
 def test_funding_window_outside_window_passes():
     """Far from funding window → not rejected."""
     gate = _make_gate()
-    next_ts = datetime.datetime.utcnow() + datetime.timedelta(hours=8)
+    next_ts = datetime.datetime.now(datetime.UTC) + datetime.timedelta(hours=8)
     next_ts_utc = next_ts.replace(tzinfo=datetime.UTC)
     verdict = gate.evaluate(
         decision=_make_decision(action="LONG", side="long"),
@@ -893,7 +893,7 @@ def test_funding_window_naive_datetime_handled():
     """next_funding_ts with no tzinfo (naive) is handled correctly without error."""
     gate = _make_gate()
     # Provide a naive datetime (no tzinfo) — gate should normalize it to UTC
-    naive_next_ts = datetime.datetime.utcnow() + datetime.timedelta(minutes=5)
+    naive_next_ts = datetime.datetime.now(datetime.UTC) + datetime.timedelta(minutes=5)
     # Negative funding → against longs
     verdict = gate.evaluate(
         decision=_make_decision(action="LONG", side="long"),

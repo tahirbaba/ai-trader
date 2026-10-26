@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 
 # Bybit interval strings
 _INTERVAL_MAP: dict[str, str] = {
+    "1m": "1",
     "5m": "5",
     "15m": "15",
     "1h": "60",
@@ -36,16 +37,21 @@ def _parse_candle(row: list[Any]) -> dict[str, float | int]:
 
 
 class OHLCVCollector(BaseCollector):
-    """Collects OHLCV candles for a single symbol across multiple timeframes."""
+    """Collects OHLCV candles for a single symbol across multiple timeframes.
 
-    TIMEFRAMES: list[str] = ["5m", "15m", "1h", "4h", "1d"]
+    The "1m" timeframe is always collected for price-shock signal computation.
+    When the 1m candle is stale or missing, the quality flag "price_1m_stale"
+    is appended so callers can treat the 1m return signal as "unknown".
+    """
+
+    TIMEFRAMES: list[str] = ["1m", "5m", "15m", "1h", "4h", "1d"]
 
     def __init__(self, symbol: str, rest_client: BybitRestClient) -> None:
         super().__init__(symbol, rest_client)
 
     def collect(self) -> CollectorResult:
         """Return the latest candle for each configured timeframe."""
-        now = datetime.datetime.utcnow()
+        now = datetime.datetime.now(datetime.UTC)
         data: dict[str, Any] = {}
         flags: list[str] = []
 
@@ -57,12 +63,16 @@ class OHLCVCollector(BaseCollector):
                     data[tf] = _parse_candle(rows[-1])
                 else:
                     flags.append(f"no_kline_{tf}")
+                    if tf == "1m":
+                        flags.append("price_1m_stale")
             except Exception as exc:
                 logger.warning(
                     "OHLCVCollector kline fetch failed",
                     extra={"symbol": self.symbol, "tf": tf, "error": str(exc)},
                 )
                 flags.append(f"kline_error_{tf}")
+                if tf == "1m":
+                    flags.append("price_1m_stale")
 
         return CollectorResult(symbol=self.symbol, ts=now, data=data, quality_flags=flags)
 
@@ -75,7 +85,7 @@ class OHLCVCollector(BaseCollector):
                 rows = self._rest.get_kline(self.symbol, interval, limit=limit)
                 for row in rows:
                     candle = _parse_candle(row)
-                    ts = datetime.datetime.utcfromtimestamp(candle["ts_ms"] / 1000)
+                    ts = datetime.datetime.fromtimestamp(candle["ts_ms"] / 1000, datetime.UTC)
                     results.append(
                         CollectorResult(
                             symbol=self.symbol,
@@ -104,7 +114,7 @@ class BookCollector(BaseCollector):
         self._depth = depth
 
     def collect(self) -> CollectorResult:
-        now = datetime.datetime.utcnow()
+        now = datetime.datetime.now(datetime.UTC)
         flags: list[str] = []
 
         try:

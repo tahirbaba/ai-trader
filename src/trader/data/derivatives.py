@@ -44,7 +44,7 @@ class DerivativesCollector(BaseCollector):
         super().__init__(symbol, rest_client)
 
     def collect(self) -> CollectorResult:
-        now = datetime.datetime.utcnow()
+        now = datetime.datetime.now(datetime.UTC)
         flags: list[str] = []
         data: dict[str, Any] = {}
 
@@ -105,7 +105,7 @@ class DerivativesCollector(BaseCollector):
             oi_rows = self._rest.get_open_interest(self.symbol, interval="1h", limit=limit)
             for row in oi_rows:
                 ts_ms, oi_val = row[0], row[1]
-                ts = datetime.datetime.utcfromtimestamp(int(ts_ms) / 1000)
+                ts = datetime.datetime.fromtimestamp(int(ts_ms) / 1000, datetime.UTC)
                 results.append(
                     CollectorResult(
                         symbol=self.symbol,

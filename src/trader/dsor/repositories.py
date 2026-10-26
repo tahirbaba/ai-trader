@@ -117,11 +117,11 @@ class SystemStateRepository:
     def set(self, key: str, value: str) -> None:
         obj = self._session.get(SystemState, key)
         if obj is None:
-            obj = SystemState(key=key, value=value, updated_ts=datetime.datetime.utcnow())
+            obj = SystemState(key=key, value=value, updated_ts=datetime.datetime.now(datetime.UTC))
             self._session.add(obj)
         else:
             obj.value = value
-            obj.updated_ts = datetime.datetime.utcnow()
+            obj.updated_ts = datetime.datetime.now(datetime.UTC)
 
 
 class ConfigAuditRepository(_BaseRepository[ConfigAudit]):

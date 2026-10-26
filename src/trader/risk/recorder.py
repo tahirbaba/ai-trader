@@ -47,7 +47,7 @@ def record_risk_event(session: Session, event_type: str, details: str) -> None:
     details : human-readable description of the event
     """
     row = RiskEvent(
-        ts=datetime.datetime.utcnow(),
+        ts=datetime.datetime.now(datetime.UTC),
         type=event_type,
         details=details,
     )

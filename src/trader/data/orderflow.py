@@ -72,7 +72,7 @@ class OrderFlowCollector(BaseCollector):
         self._book_depth = book_depth
 
     def collect(self) -> CollectorResult:
-        now = datetime.datetime.utcnow()
+        now = datetime.datetime.now(datetime.UTC)
         flags: list[str] = []
         data: dict[str, Any] = {}
 

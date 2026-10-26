@@ -67,6 +67,14 @@ strict = true
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 
+[tool.hypothesis]
+# Default profile — fast, used in CI on every push
+max_examples = 100
+
+[tool.hypothesis.profiles.ci]
+# Thorough profile — run once before merging; catches rare edge cases
+max_examples = 10000
+
 [dependency-groups]
 dev = [
     "hypothesis>=6.170.9",

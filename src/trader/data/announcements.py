@@ -17,14 +17,14 @@ _Window = tuple[datetime.datetime, datetime.datetime | None, str, str]
 
 def _utcnow() -> datetime.datetime:
     """Return current UTC time (injectable for testing)."""
-    return datetime.datetime.utcnow()
+    return datetime.datetime.now(datetime.UTC)
 
 
 def _ms_to_dt(ms: int | None) -> datetime.datetime | None:
     """Convert Bybit epoch milliseconds (UTC) to a naive UTC datetime."""
     if ms is None:
         return None
-    return datetime.datetime.utcfromtimestamp(ms / 1000.0)
+    return datetime.datetime.fromtimestamp(ms / 1000.0, datetime.UTC)
 
 
 class ExchangeAnnouncementCollector(BaseCollector):
@@ -79,6 +79,9 @@ class ExchangeAnnouncementCollector(BaseCollector):
                         whose title contains "maintenance".
         (False, "")     otherwise.
         """
+        # Normalise to aware UTC so naive test inputs still compare correctly.
+        if now.tzinfo is None:
+            now = now.replace(tzinfo=datetime.UTC)
         for start, end, ann_type, title in self._windows:
             is_maintenance = (
                 ann_type.lower() == "maintain_systems" or "maintenance" in title.lower()

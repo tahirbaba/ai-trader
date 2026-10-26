@@ -34,7 +34,7 @@ def _make_append_only(cls: type) -> type:
 
 
 def _utcnow() -> datetime.datetime:
-    return datetime.datetime.utcnow()
+    return datetime.datetime.now(datetime.UTC)
 
 
 class MarketSnapshot(Base):

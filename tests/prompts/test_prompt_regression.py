@@ -151,7 +151,7 @@ def build_orchestrator(
         with SASession(engine) as s:
             s.add(
                 LlmCall(
-                    ts=datetime.datetime.utcnow(),
+                    ts=datetime.datetime.now(datetime.UTC),
                     purpose="prev",
                     model="x",
                     input_tokens=1,

@@ -8,7 +8,7 @@ from trader.data.quality import DataQualityMonitor
 
 
 def _now() -> datetime.datetime:
-    return datetime.datetime.utcnow()
+    return datetime.datetime.now(datetime.UTC)
 
 
 def _ago(seconds: float) -> datetime.datetime:
