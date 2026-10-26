@@ -101,7 +101,7 @@ def main() -> None:
     reason = check_command(command)
     if reason:
         print(
-            f"BLOCKED: {reason}. " "Modifying protected files requires explicit owner instruction.",
+            f"BLOCKED: {reason}. Modifying protected files requires explicit owner instruction.",
             file=sys.stderr,
         )
         sys.exit(1)

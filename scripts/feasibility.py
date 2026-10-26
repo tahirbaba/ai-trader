@@ -727,7 +727,7 @@ def write_markdown_report(results: list[ContractInfo], output_path: Path) -> Non
             f"= {planned_lev:.1f}x\n"
         )
         lines.append(
-            f"- **liq_distance_pct** = (1/{planned_lev:.1f} − {MAINT_MARGIN_PCT/100:.4f}) × 100 "
+            f"- **liq_distance_pct** = (1/{planned_lev:.1f} − {MAINT_MARGIN_PCT / 100:.4f}) × 100 "
             f"= **{r.liq_distance_pct:.4f}%**\n"
         )
         cond1 = r.max_notional_ok

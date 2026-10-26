@@ -61,3 +61,43 @@ class PositionReview(BaseModel):
     action: Literal["HOLD", "CLOSE", "TIGHTEN_STOP"]
     new_stop_loss: float | None = None  # only for TIGHTEN_STOP; must be tighter
     reason: str = ""
+
+
+class LessonCandidate(BaseModel):
+    """A single lesson candidate proposed by the LLM post-trade reviewer."""
+
+    condition: str = ""
+    rule: dict[str, Any] = {}
+    effect: str = ""
+    tags: list[str] = []
+
+    def model_post_init(self, __context: Any) -> None:
+        from trader.learning.constants import TIGHTEN_ONLY_FORBIDDEN_KEYS  # noqa: PLC0415
+
+        for key in TIGHTEN_ONLY_FORBIDDEN_KEYS:
+            if key in self.rule:
+                raise ValueError(
+                    f"LessonCandidate rule contains forbidden key {key!r} "
+                    "that would loosen safety constraints (tighten-only policy)"
+                )
+
+
+class PostTradeReviewOutput(BaseModel):
+    """Validated output schema for the PostTradeReview LLM call.
+
+    Parse failure (ValidationError) must be treated as NO corrective lesson.
+    """
+
+    outcome_class: Literal[
+        "good_decision_good_outcome",
+        "good_decision_bad_outcome",
+        "bad_decision_good_outcome",
+        "bad_decision_bad_outcome",
+    ]
+    what_went_right: str = ""
+    what_went_wrong: str = ""
+    lesson_candidates: list[LessonCandidate] = []
+
+    def model_post_init(self, __context: Any) -> None:
+        if len(self.lesson_candidates) > 2:
+            object.__setattr__(self, "lesson_candidates", self.lesson_candidates[:2])
