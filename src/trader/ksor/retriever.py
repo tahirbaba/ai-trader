@@ -186,5 +186,5 @@ class KsorRetriever:
             logger.warning(
                 "KsorRetriever: skipping entry %r — tighten-only violation: %s", entry.id, exc
             )
-            return None  # type: ignore[return-value]
+            return None
         return entry

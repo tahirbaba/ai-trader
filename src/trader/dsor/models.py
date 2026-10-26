@@ -216,6 +216,7 @@ class Trade(Base):
     )
     open_ts: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False)
     close_ts: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+    symbol: Mapped[str | None] = mapped_column(String(64), nullable=True)  # Phase 9
     side: Mapped[str] = mapped_column(String(8), nullable=False)
     entry: Mapped[float] = mapped_column(Float, nullable=False)
     exit: Mapped[float | None] = mapped_column(Float, nullable=True)

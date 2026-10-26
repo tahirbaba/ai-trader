@@ -1,12 +1,23 @@
 version: "3.9"
+# Phase 9: app + SQLite DB (file on the ./data volume).
+# Caddy is NOT included: the TradingView webhook is disabled (ADR-004 option a),
+# so nothing needs to be exposed publicly. Reach the dashboard via SSH tunnel:
+#   ssh -L 8000:127.0.0.1:8000 <vps>
 services:
   trader:
     build: .
     env_file: .env
+    environment:
+      TRADING_MODE: paper            # overrides .env — this stack never runs live
+      DATABASE_URL: sqlite:////app/data/trader.db
+      BACKUP_DIR: /app/backups
+      KILL_SWITCH_FILE: /app/data/KILL_SWITCH
     volumes:
       - ./config:/app/config:ro
       - ./ksor:/app/ksor
       - ./data:/app/data
+      - ./backups:/app/backups
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"        # localhost only
     restart: unless-stopped
+    stop_grace_period: 30s

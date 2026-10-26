@@ -7,6 +7,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
+- Phase 9: `trader.main` paper-only composition root (`make paper-local`, `make paper-once`); `ops/scheduler.py`, `ops/runtime.py` (brain cycle via `TradeCycleOrchestrator`, position monitor, reconciliation, shadow outcomes, code-only post-trade review, weekly consolidation, clock check, heartbeat, daily reset/backup/summary).
+- Phase 9: `ops/control.py` Controller, `ops/telegram_bot.py` (authorized chat only; `/status /positions /pnl /stop /pause /resume /mode /lessons /approve /reject /confirm`), `ops/alerts.py` (UTC + PKT on every alert).
+- Phase 9: `ops/kill_switch.py` (DSOR flag + file flag, fail-closed; Telegram, API, file), `ops/heartbeat.py` (external dead-man), `ops/backup.py`, `ops/trade_ledger.py`, `ops/shadow.py`, `ops/market_feed.py`.
+- Phase 9: read-only dashboard `dashboard/app.py` + Lightweight Charts page; `Dockerfile`, `docker-compose.yml` (localhost-only port), `Makefile`, `docs/RUNBOOK.md`, ADR-011, ADR-012; `trades.symbol` column + migration; `fastapi`, `uvicorn` deps.
+- Phase 9: 102 tests in `tests/test_phase9_ops.py` (incl. reviewer regressions: token redaction, kill-switch/submit race, group-chat senders, `/unhalt` refusal, CSRF, Host allowlist).
+
+### Fixed
+- Guard hooks now block with exit 2 and fail closed (ADR-011); `.env.example` scrubbed and guarded by `tests/test_env_example.py`.
 - Phase 7: `src/trader/execution/adapter.py` — `ExchangeAdapter` ABC with 11 abstract methods covering balance, positions, orders, leverage, margin mode, market metadata, and ping.
 - Phase 7: `src/trader/execution/paper_broker.py` — `PaperBroker(ExchangeAdapter)` realistic in-memory simulation with configurable fees, slippage, injectable clock, SL/TP triggers, TTL expiry, MAE/MFE tracking, and funding.
 - Phase 7: `src/trader/execution/live_adapter.py` — `LiveAdapter(ExchangeAdapter)` ccxt-based Bybit adapter; raises `LiveNotApprovedError` unless `config/live_approval.yaml` exists; lazy ccxt import.

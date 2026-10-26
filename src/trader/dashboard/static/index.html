@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ai-trader (paper)</title>
+<script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js" integrity="sha384-OK7vELvjHdhUFi31JYioPIcRHTROLdcDa6ZsNWgvgLaKj+9JqhU0Ad8g4wz3CXjA" crossorigin="anonymous"></script>
+<style>
+  :root { --bg:#0f1115; --panel:#171a21; --fg:#e6e6e6; --muted:#8a8f98; --up:#26a69a; --down:#ef5350; --warn:#f5a623; }
+  body { margin:0; font:14px/1.4 system-ui, sans-serif; background:var(--bg); color:var(--fg); }
+  header { display:flex; gap:16px; align-items:center; padding:10px 16px; background:var(--panel); flex-wrap:wrap; }
+  header h1 { font-size:16px; margin:0; }
+  .badge { padding:2px 8px; border-radius:4px; background:#2a2f3a; }
+  .badge.bad { background:var(--down); color:#fff; }
+  main { padding:16px; display:grid; gap:16px; }
+  section { background:var(--panel); border-radius:6px; padding:12px; overflow:auto; }
+  h2 { font-size:14px; margin:0 0 8px; color:var(--muted); font-weight:600; }
+  #chart, #equity { height:420px; } #equity { height:220px; }
+  table { border-collapse:collapse; width:100%; font-variant-numeric:tabular-nums; }
+  th, td { text-align:left; padding:4px 8px; border-bottom:1px solid #252a33; white-space:nowrap; }
+  .pos { color:var(--up); } .neg { color:var(--down); }
+  select, button { background:#2a2f3a; color:var(--fg); border:1px solid #3a404c; border-radius:4px; padding:4px 8px; }
+  button.kill { background:var(--down); border-color:var(--down); color:#fff; margin-left:auto; }
+  footer { padding:8px 16px; color:var(--muted); font-size:12px; }
+  footer a { color:var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <h1>ai-trader</h1>
+  <span id="mode" class="badge">…</span>
+  <span id="blocked" class="badge">…</span>
+  <label>Symbol <select id="symbol"></select></label>
+  <label>TF <select id="tf"><option>5m</option><option selected>15m</option><option>1h</option><option>4h</option><option>1d</option></select></label>
+  <button class="kill" id="kill" title="Engage kill switch and close all positions">KILL SWITCH</button>
+</header>
+<main>
+  <section><h2>Chart — entries ▲▼, exits ●, blocks ✕ (LessonFilter / Risk Gate), TradingView alerts ◆</h2><div id="chart"></div></section>
+  <section><h2>Equity curve (realised, paper)</h2><div id="equity"></div></section>
+  <section><h2>Trades</h2><table id="trades"></table></section>
+  <section><h2>Lessons</h2><table id="lessons"></table></section>
+  <section><h2>LLM costs</h2><table id="costs"></table></section>
+</main>
+<footer>Charts by <a href="https://www.tradingview.com/" target="_blank" rel="noopener">TradingView</a> Lightweight Charts™ (Apache-2.0). Read-only view; times shown in your browser's local zone.</footer>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const get = async (url) => { const r = await fetch(url); if (!r.ok) throw new Error(url + " " + r.status); return r.json(); };
+const opts = { layout:{ background:{ color:"#171a21" }, textColor:"#e6e6e6" }, grid:{ vertLines:{ color:"#222" }, horzLines:{ color:"#222" } }, timeScale:{ timeVisible:true } };
+const chart = LightweightCharts.createChart($("chart"), opts);
+const candles = chart.addCandlestickSeries();
+const eqChart = LightweightCharts.createChart($("equity"), opts);
+const eqSeries = eqChart.addLineSeries({ color:"#4c8bf5" });
+let priceLines = [];
+
+function table(el, rows, cols) {
+  el.innerHTML = "<tr>" + cols.map((c) => `<th>${esc(c)}</th>`).join("") + "</tr>" +
+    rows.map((r) => "<tr>" + cols.map((c) => {
+      const v = r[c]; const cls = (c === "pnl_usd" || c === "cost_usd") && typeof v === "number" ? (v >= 0 ? "pos" : "neg") : "";
+      return `<td class="${cls}">${esc(typeof v === "number" ? +v.toFixed(6) : v)}</td>`; }).join("") + "</tr>").join("");
+}
+
+function toMarker(m) {
+  if (m.kind === "entry") return { time:m.time, position: m.side === "buy" ? "belowBar" : "aboveBar", color: m.side === "buy" ? "#26a69a" : "#ef5350", shape: m.side === "buy" ? "arrowUp" : "arrowDown", text:"entry" };
+  if (m.kind === "exit") return { time:m.time, position:"aboveBar", color:"#e6e6e6", shape:"circle", text: "exit " + (m.reason || "") };
+  if (m.kind === "block") return { time:m.time, position:"aboveBar", color:"#f5a623", shape:"square", text: "✕ " + m.reason };
+  return { time:m.time, position:"belowBar", color:"#b388ff", shape:"circle", text:"TV " + (m.name || "") };
+}
+
+async function loadChart() {
+  const sym = $("symbol").value, tf = $("tf").value;
+  const q = "symbol=" + encodeURIComponent(sym);
+  const [bars, mk] = await Promise.all([get(`/api/candles?${q}&tf=${tf}`), get(`/api/markers?${q}`)]);
+  candles.setData(bars);
+  const first = bars.length ? bars[0].time : 0;
+  candles.setMarkers(mk.markers.filter((m) => m.time && m.time >= first).map(toMarker));
+  priceLines.forEach((l) => candles.removePriceLine(l));
+  priceLines = mk.lines.map((l) => candles.createPriceLine({ price:l.price, color: l.kind === "sl" ? "#ef5350" : "#26a69a", lineStyle:2, title:l.kind.toUpperCase() }));
+}
+
+async function loadAll() {
+  const h = await get("/api/health");
+  $("mode").textContent = h.mode;
+  $("blocked").textContent = h.entries_blocked ? "entries blocked: " + h.entries_blocked : "entries allowed";
+  $("blocked").className = "badge" + (h.entries_blocked ? " bad" : "");
+  if (!$("symbol").options.length) $("symbol").innerHTML = h.symbols.map((s) => `<option>${esc(s)}</option>`).join("");
+  await loadChart();
+  eqSeries.setData((await get("/api/equity")).filter((p) => p.time));
+  table($("trades"), await get("/api/trades?limit=50"), ["id","symbol","side","entry","exit","qty","pnl_usd","r","reason"]);
+  table($("lessons"), await get("/api/lessons"), ["id","status","setup","blocks","blocked_shadow_r"]);
+  table($("costs"), await get("/api/llm-costs"), ["day","purpose","calls","cost_usd"]);
+}
+
+$("symbol").onchange = loadChart; $("tf").onchange = loadChart;
+$("kill").onclick = async () => {
+  if (!window.confirm("Engage KILL SWITCH and close all positions?")) return;
+  const r = await fetch("/api/kill-switch", { method:"POST", headers:{ "X-Trader-Action":"kill-switch" } });
+  window.alert(r.ok ? "Kill switch engaged." : "Kill switch request failed: " + r.status);
+  loadAll();
+};
+loadAll().catch((e) => console.error(e));
+setInterval(() => loadAll().catch((e) => console.error(e)), 30000);
+</script>
+</body>
+</html>
