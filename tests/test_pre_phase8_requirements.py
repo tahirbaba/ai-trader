@@ -598,34 +598,34 @@ class TestHookBlocksSensitiveFiles:
 
     def test_edit_risk_yaml_blocked(self):
         code, msg = _run_block_sensitive("Edit", "/repo/config/risk.yaml")
-        assert code == 1
+        assert code == 2
         assert "BLOCKED" in msg
 
     def test_edit_env_blocked(self):
         code, msg = _run_block_sensitive("Edit", "/repo/.env")
-        assert code == 1
+        assert code == 2
         assert "BLOCKED" in msg
 
     def test_edit_live_approval_blocked(self):
         code, msg = _run_block_sensitive("Edit", "/repo/config/live_approval.yaml")
-        assert code == 1
+        assert code == 2
 
     def test_edit_settings_json_blocked(self):
         code, msg = _run_block_sensitive("Edit", "/repo/.claude/settings.json")
-        assert code == 1
+        assert code == 2
 
     def test_edit_block_sensitive_hook_blocked(self):
         """Hook script protects itself."""
         code, msg = _run_block_sensitive("Edit", "/repo/.claude/hooks/block_sensitive.sh")
-        assert code == 1
+        assert code == 2
 
     def test_edit_block_bash_hook_blocked(self):
         code, msg = _run_block_sensitive("Edit", "/repo/.claude/hooks/block_bash_writes.py")
-        assert code == 1
+        assert code == 2
 
     def test_write_risk_yaml_blocked(self):
         code, msg = _run_block_sensitive("Write", "/repo/config/risk.yaml")
-        assert code == 1
+        assert code == 2
 
     def test_edit_normal_file_allowed(self):
         code, _ = _run_block_sensitive("Edit", "/repo/src/trader/risk/gate.py")
@@ -633,7 +633,7 @@ class TestHookBlocksSensitiveFiles:
 
     def test_multiEdit_risk_yaml_blocked(self):
         code, msg = _run_block_sensitive("MultiEdit", "/repo/config/risk.yaml")
-        assert code == 1
+        assert code == 2
 
 
 class TestHookBlocksBashWrites:
@@ -641,44 +641,44 @@ class TestHookBlocksBashWrites:
 
     def test_sed_risk_yaml_blocked(self):
         code, msg = _run_block_bash("sed -i 's/foo/bar/' config/risk.yaml")
-        assert code == 1
+        assert code == 2
         assert "BLOCKED" in msg
 
     def test_redirect_to_risk_yaml_blocked(self):
         code, msg = _run_block_bash("echo 'x: 1' > config/risk.yaml")
-        assert code == 1
+        assert code == 2
 
     def test_tee_to_risk_yaml_blocked(self):
         code, msg = _run_block_bash("echo 'x' | tee config/risk.yaml")
-        assert code == 1
+        assert code == 2
 
     def test_mv_to_risk_yaml_blocked(self):
         code, msg = _run_block_bash("mv /tmp/new.yaml config/risk.yaml")
-        assert code == 1
+        assert code == 2
 
     def test_cp_to_risk_yaml_blocked(self):
         code, msg = _run_block_bash("cp /tmp/new.yaml config/risk.yaml")
-        assert code == 1
+        assert code == 2
 
     def test_rm_env_blocked(self):
         code, msg = _run_block_bash("rm .env")
-        assert code == 1
+        assert code == 2
 
     def test_git_checkout_risk_yaml_blocked(self):
         code, msg = _run_block_bash("git checkout -- config/risk.yaml")
-        assert code == 1
+        assert code == 2
 
     def test_git_restore_env_blocked(self):
         code, msg = _run_block_bash("git restore .env")
-        assert code == 1
+        assert code == 2
 
     def test_python_one_liner_writing_env_blocked(self):
         code, msg = _run_block_bash("python3 -c \"open('.env', 'w').write('x=1')\"")
-        assert code == 1
+        assert code == 2
 
     def test_perl_inplace_blocked(self):
         code, msg = _run_block_bash("perl -i -pe 's/foo/bar/' config/risk.yaml")
-        assert code == 1
+        assert code == 2
 
     def test_normal_echo_allowed(self):
         code, _ = _run_block_bash("echo 'hello world'")

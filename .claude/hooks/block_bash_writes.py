@@ -15,7 +15,11 @@ Detected patterns (case-sensitive paths, anchored to filename):
   python/python3/perl/node one-liners writing to a protected path
   cat / printf / echo with redirect
 
-Exit 1 (with message on stderr) to block; exit 0 to allow.
+Exit codes (Claude Code PreToolUse contract):
+  0 = allow
+  2 = BLOCK (reason on stderr is shown to Claude)
+Any other non-zero code is a NON-blocking error and the tool still runs, so
+every block path and every malformed-input path exits 2 (fail-closed).
 """
 
 from __future__ import annotations
@@ -23,6 +27,7 @@ from __future__ import annotations
 import json
 import re
 import sys
+from typing import NoReturn
 
 PROTECTED = [
     r"\.env(?!\w)",
@@ -84,27 +89,37 @@ def check_command(command: str) -> str | None:
     return None
 
 
+def _block(reason: str) -> NoReturn:
+    print(f"BLOCKED: {reason}", file=sys.stderr)
+    sys.exit(2)
+
+
 def main() -> None:
     try:
         data = json.load(sys.stdin)
-    except json.JSONDecodeError:
-        sys.exit(0)  # not our input format — allow
+    except Exception:
+        _block("malformed hook input (fail-closed).")
 
-    tool_name = data.get("tool_name", "") or data.get("tool", "")
+    if not isinstance(data, dict):
+        _block("malformed hook input (fail-closed).")
+
+    tool_name = data.get("tool_name") or data.get("tool")
+    if not isinstance(tool_name, str) or not tool_name:
+        _block("missing tool_name in hook input (fail-closed).")
     if tool_name != "Bash":
-        sys.exit(0)
+        sys.exit(0)  # matcher misroute — not a Bash call, nothing to guard
 
-    command: str = (data.get("tool_input") or {}).get("command", "")
-    if not command:
-        sys.exit(0)
+    tool_input = data.get("tool_input")
+    if not isinstance(tool_input, dict):
+        _block("missing tool_input in hook input (fail-closed).")
+
+    command = tool_input.get("command")
+    if not isinstance(command, str) or not command.strip():
+        _block("missing or empty command in hook input (fail-closed).")
 
     reason = check_command(command)
     if reason:
-        print(
-            f"BLOCKED: {reason}. Modifying protected files requires explicit owner instruction.",
-            file=sys.stderr,
-        )
-        sys.exit(1)
+        _block(f"{reason}. Modifying protected files requires explicit owner instruction.")
 
     sys.exit(0)
 
