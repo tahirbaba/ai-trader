@@ -585,10 +585,9 @@ def test_compute_size_loss_never_exceeds_cap(
             max_leverage=float(MAX_LEVERAGE),
             slippage_buffer_pct=SLIP,
         )
-        assert loss <= MAX_LOSS_USD + 1e-9, (
-            f"loss {loss} exceeds MAX_LOSS_USD {MAX_LOSS_USD} "
-            f"entry={entry} stop={stop} qty={qty}"
-        )
+        assert (
+            loss <= MAX_LOSS_USD + 1e-9
+        ), f"loss {loss} exceeds MAX_LOSS_USD {MAX_LOSS_USD} entry={entry} stop={stop} qty={qty}"
         assert (
             margin <= MAX_MARGIN_USD + 1e-9
         ), f"margin {margin} exceeds MAX_MARGIN_USD {MAX_MARGIN_USD}"

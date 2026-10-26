@@ -59,9 +59,7 @@ class TechnicalAnalyst:
         On parse failure → return neutral TechnicalReport.
         """
         # Feature data is structured numeric data — safe to include as JSON
-        prompt = (
-            f"Symbol: {symbol}\n\n" f"Feature pack:\n{json.dumps(feature_pack_dict, default=str)}"
-        )
+        prompt = f"Symbol: {symbol}\n\nFeature pack:\n{json.dumps(feature_pack_dict, default=str)}"
 
         try:
             raw = self._llm.complete(

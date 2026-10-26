@@ -7,7 +7,7 @@ import json
 import logging
 from typing import TYPE_CHECKING, Any
 
-from trader.ksor.loader import KsorEntry
+from trader.ksor.loader import KsorEntry, _validate_tighten_only
 
 if TYPE_CHECKING:
     from trader.ksor.indexer import KsorIndexer
@@ -38,7 +38,7 @@ class KsorRetriever:
         the full active lesson set for rule evaluation.
         """
         raw = self._indexer.get_all(status_filter=["active"])
-        return [self._row_to_entry(r) for r in raw]
+        return [e for r in raw if (e := self._row_to_entry(r)) is not None]
 
     def retrieve(
         self,
@@ -82,6 +82,8 @@ class KsorRetriever:
         scored: list[tuple[float, KsorEntry]] = []
         for row in raw:
             entry = self._row_to_entry(row)
+            if entry is None:
+                continue
             if entry.status == _DEPRECATED:
                 continue  # double-safety
             score = self._score(entry, regime=regime, symbol=symbol, side=side, tags=tags)
@@ -145,7 +147,7 @@ class KsorRetriever:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _row_to_entry(row: dict[str, Any]) -> KsorEntry:
+    def _row_to_entry(row: dict[str, Any]) -> KsorEntry | None:
         """Convert a ksor_meta row dict to a KsorEntry."""
         rule = None
         if row.get("rule_json"):
@@ -166,7 +168,7 @@ class KsorRetriever:
         with contextlib.suppress(json.JSONDecodeError, TypeError):
             symbols = json.loads(row.get("symbols_json") or "[]")
 
-        return KsorEntry(
+        entry = KsorEntry(
             id=row.get("entry_id", ""),
             type=row.get("type", ""),
             status=row.get("status", ""),
@@ -178,3 +180,11 @@ class KsorRetriever:
             effect_value=row.get("effect_value"),
             file_path=row.get("file_path", ""),
         )
+        try:
+            _validate_tighten_only(entry)
+        except ValueError as exc:
+            logger.warning(
+                "KsorRetriever: skipping entry %r — tighten-only violation: %s", entry.id, exc
+            )
+            return None  # type: ignore[return-value]
+        return entry

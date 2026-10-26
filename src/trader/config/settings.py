@@ -113,6 +113,7 @@ class RiskSettings(BaseModel):
     allowed_symbols: list[str] = []
     total_llm_budget_usd_per_day: float = 5.0
     price_shock: PriceShockSettings = PriceShockSettings()
+    max_active_lessons: int = 25
 
     @model_validator(mode="after")
     def _cross_validate(self) -> RiskSettings:

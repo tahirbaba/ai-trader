@@ -9,7 +9,28 @@ from typing import Any
 import frontmatter  # python-frontmatter
 from pydantic import BaseModel, Field, field_validator
 
+from trader.learning.constants import TIGHTEN_ONLY_ALLOWED_ACTIONS, TIGHTEN_ONLY_FORBIDDEN_KEYS
+
 logger = logging.getLogger(__name__)
+
+
+def _validate_tighten_only(entry: KsorEntry) -> None:
+    """Raise ValueError if this entry would loosen safety constraints."""
+    rule = entry.rule
+    if rule is None:
+        return
+    for key in TIGHTEN_ONLY_FORBIDDEN_KEYS:
+        if key in rule:
+            raise ValueError(
+                f"Lesson {entry.id!r} contains forbidden key {key!r} "
+                "that would loosen safety constraints (tighten-only policy)"
+            )
+    action = rule.get("action", "")
+    if action and action not in TIGHTEN_ONLY_ALLOWED_ACTIONS:
+        raise ValueError(
+            f"Lesson {entry.id!r} has disallowed action {action!r}. "
+            f"Allowed: {TIGHTEN_ONLY_ALLOWED_ACTIONS}"
+        )
 
 
 class KsorEntry(BaseModel):
@@ -88,6 +109,12 @@ def load_ksor_entries(root: Path) -> list[KsorEntry]:
             )
         except Exception as exc:  # noqa: BLE001
             logger.warning("KSOR loader: skipping %s — model error: %s", path, exc)
+            continue
+
+        try:
+            _validate_tighten_only(entry)
+        except ValueError as exc:
+            logger.warning("KSOR loader: skipping %s — tighten-only violation: %s", path, exc)
             continue
 
         entries.append(entry)

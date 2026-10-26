@@ -247,8 +247,7 @@ class PositionMonitor:
                         continue
                 else:
                     logger.warning(
-                        "position_monitor: amend SL failed (non-adverse) for %s %s: "
-                        "%.6f -> %.6f",
+                        "position_monitor: amend SL failed (non-adverse) for %s %s: %.6f -> %.6f",
                         symbol,
                         side_raw,
                         current_sl,
@@ -268,7 +267,7 @@ class PositionMonitor:
             else:
                 self._adverse_fail_count.pop(symbol, None)
                 logger.info(
-                    "position_monitor: amended SL for %s %s: %.6f -> %.6f " "(shock_adverse=%s)",
+                    "position_monitor: amended SL for %s %s: %.6f -> %.6f (shock_adverse=%s)",
                     symbol,
                     side_raw,
                     current_sl,
